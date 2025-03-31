@@ -1,0 +1,6 @@
+H Blackbox version 4
+H Field definitions: time, axisP[0], axisP[1], axisP[2], axisI[0], axisI[1], axisI[2], axisD[0], axisD[1], axisD[2]
+I 0, 0, 0, 0, 0, 0, 0, 0, 0
+I 1, 10, 15, 20, 5, 7, 9, 2, 3, 4
+I 2, 12, 18, 22, 6, 8, 10, 3, 4, 5
+I 3, 14, 20, 24, 7, 9, 11, 4, 5, 6
