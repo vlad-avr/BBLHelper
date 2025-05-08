@@ -1,68 +1,13 @@
 import sys
 import os
 import pandas as pd
-from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget,
-    QPushButton, QFileDialog, QTableWidget, QTableWidgetItem, QMessageBox, QListWidget
-)
+from PyQt6.QtWidgets import QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget, QPushButton, QFileDialog, QMessageBox
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from ui.table_window import TableWindow
+from ui.file_selection import FileSelectionWindow
+from ui.column_selection import ColumnSelectionWindow
+from matplotlib import pyplot as plt
 from src.converter import convert_bbl_to_csv  # Import the converter logic
-
-class TableWindow(QWidget):
-    """Displays the selected CSV log data as a table."""
-    def __init__(self, csv_file):
-        super().__init__()
-
-        self.setWindowTitle(f"Blackbox Log Data - {os.path.basename(csv_file)}")
-        self.setGeometry(150, 150, 900, 500)
-
-        layout = QVBoxLayout()
-        self.table = QTableWidget()
-        self.load_csv(csv_file)
-
-        layout.addWidget(self.table)
-        self.setLayout(layout)
-
-    def load_csv(self, csv_file):
-        """Loads CSV data into the table widget."""
-        df = pd.read_csv(csv_file)
-        self.table.setRowCount(len(df))
-        self.table.setColumnCount(len(df.columns))
-        self.table.setHorizontalHeaderLabels(df.columns)
-
-        for row in range(len(df)):
-            for col in range(len(df.columns)):
-                item = QTableWidgetItem(str(df.iloc[row, col]))
-                self.table.setItem(row, col, item)
-
-class FileSelectionWindow(QWidget):
-    """Displays a list of CSV files for the user to select."""
-    def __init__(self, output_dir, parent):
-        super().__init__()
-        self.output_dir = output_dir
-        self.parent = parent
-
-        self.setWindowTitle("Select a CSV File")
-        self.setGeometry(200, 200, 400, 300)
-
-        layout = QVBoxLayout()
-        self.list_widget = QListWidget()
-        self.load_csv_files()
-
-        self.list_widget.itemDoubleClicked.connect(self.open_csv_file)
-
-        layout.addWidget(self.list_widget)
-        self.setLayout(layout)
-
-    def load_csv_files(self):
-        """Loads the list of CSV files from the output directory."""
-        csv_files = [f for f in os.listdir(self.output_dir) if f.endswith(".csv")]
-        self.list_widget.addItems(csv_files)
-
-    def open_csv_file(self, item):
-        """Opens the selected CSV file in a new table window without closing the list."""
-        csv_file_path = os.path.join(self.output_dir, item.text())
-        self.parent.show_table(csv_file_path)
 
 class MainWindow(QMainWindow):
     """Main Window with file selection and processing."""
@@ -93,7 +38,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.open_folder_button)
         central_widget.setLayout(layout)
 
-        # Keep track of open TableWindows
+        # Keep track of open windows
         self.open_windows = []
 
     def open_file_dialog(self):
@@ -102,7 +47,6 @@ class MainWindow(QMainWindow):
             self, "Select Blackbox Log File", "", "Blackbox Logs (*.bbl);;All Files (*)"
         )
         if file_path:
-            # Ask the user to select or create a folder for the output
             output_dir = QFileDialog.getExistingDirectory(
                 self, "Select Output Folder", ""
             )
@@ -114,8 +58,7 @@ class MainWindow(QMainWindow):
             output_dir = os.path.join(output_dir, os.path.basename(file_path).replace(".bbl", "_output"))
             os.makedirs(output_dir, exist_ok=True)
 
-            # Decode the .bbl file
-            generated_dir = convert_bbl_to_csv(file_path, output_dir)  # Pass both arguments
+            generated_dir = convert_bbl_to_csv(file_path, output_dir)
             if generated_dir:
                 self.label.setText(f"Files generated in: {generated_dir}")
                 self.show_file_selection(generated_dir)
@@ -140,8 +83,26 @@ class MainWindow(QMainWindow):
     def show_table(self, csv_file):
         """Opens a new window displaying the CSV data as a table."""
         table_window = TableWindow(csv_file)
-        self.open_windows.append(table_window)  # Keep a reference to prevent garbage collection
+        self.open_windows.append(table_window)
         table_window.show()
+
+    def show_column_selection(self, csv_file):
+        """Opens a new window for column selection."""
+        self.column_selection_window = ColumnSelectionWindow(csv_file, self)
+        self.column_selection_window.show()
+
+    def plot_graph(self, csv_file, columns):
+        """Plots the selected columns from the CSV file."""
+        df = pd.read_csv(csv_file)
+        if " time (us)" not in df.columns:
+            QMessageBox.critical(self, "Error", "The CSV file does not contain a 'time (us)' column.")
+            return
+
+        # Plot the selected columns against 'time (us)'
+        df.set_index(" time (us)")[columns].plot(title=f"Graph for {os.path.basename(csv_file)}")
+        plt.xlabel("Time (us)")
+        plt.ylabel("Values")
+        plt.show()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
