@@ -6,7 +6,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from ui.table_window import TableWindow
 from ui.file_selection import FileSelectionWindow
 from ui.column_selection import ColumnSelectionWindow
-from matplotlib import pyplot as plt
+import plotly.express as px
 from src.converter import convert_bbl_to_csv  # Import the converter logic
 
 class MainWindow(QMainWindow):
@@ -92,17 +92,17 @@ class MainWindow(QMainWindow):
         self.column_selection_window.show()
 
     def plot_graph(self, csv_file, columns):
-        """Plots the selected columns from the CSV file."""
+        """Plots the selected columns from the CSV file using Plotly."""
         df = pd.read_csv(csv_file)
+    
         if " time (us)" not in df.columns:
-            QMessageBox.critical(self, "Error", "The CSV file does not contain a 'time (us)' column.")
+            print("CSV file missing 'time (us)' column.")
             return
 
-        # Plot the selected columns against 'time (us)'
-        df.set_index(" time (us)")[columns].plot(title=f"Graph for {os.path.basename(csv_file)}")
-        plt.xlabel("Time (us)")
-        plt.ylabel("Values")
-        plt.show()
+        df = df.rename(columns={" time (us)": "time_us"})  # fix column name
+        fig = px.line(df, x="time_us", y=columns, title=f"Graph for {os.path.basename(csv_file)}")
+        fig.update_layout(xaxis_title="Time (us)", yaxis_title="Values")
+        fig.show()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
