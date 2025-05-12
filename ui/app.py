@@ -2,12 +2,19 @@ import sys
 import os
 import pandas as pd
 from PyQt6.QtWidgets import QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget, QPushButton, QFileDialog, QMessageBox
+from PyQt6.QtWebEngineWidgets import QWebEngineView
+from PyQt6.QtCore import QUrl  # Import QUrl
+import tempfile
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--disable-gpu --disable-software-rasterizer"  # Disable GPU acceleration
+os.environ["QT_QUICK_BACKEND"] = "software"
 from ui.table_window import TableWindow
 from ui.file_selection import FileSelectionWindow
 from ui.column_selection import ColumnSelectionWindow
 import plotly.express as px
 from src.converter import convert_bbl_to_csv  # Import the converter logic
+from bokeh.plotting import figure, output_file, show  # Import Bokeh for plotting
+from bokeh.palettes import Category10  # Import a color palette
 
 class MainWindow(QMainWindow):
     """Main Window with file selection and processing."""
@@ -39,7 +46,9 @@ class MainWindow(QMainWindow):
         central_widget.setLayout(layout)
 
         # Keep track of open windows
-        self.open_windows = []
+        self.open_file_selection_windows = []  # Track multiple file selection windows
+        self.open_column_selection_windows = []  # Track multiple column selection windows
+        self.open_table_windows = []  # Track multiple table windows
 
     def open_file_dialog(self):
         """Opens a file dialog to select a .bbl log file and process it."""
@@ -76,33 +85,67 @@ class MainWindow(QMainWindow):
             self.show_file_selection(folder_path)
 
     def show_file_selection(self, output_dir):
-        """Opens a new window displaying the list of CSV files."""
-        self.file_selection_window = FileSelectionWindow(output_dir, self)
-        self.file_selection_window.show()
+        """Opens a new file selection window."""
+        file_selection_window = FileSelectionWindow(output_dir, self)
+        self.open_file_selection_windows.append(file_selection_window)
+        file_selection_window.show()
+
+        # Remove the window from the list when it is closed
+        file_selection_window.destroyed.connect(
+            lambda: self.open_file_selection_windows.remove(file_selection_window)
+        )
 
     def show_table(self, csv_file):
         """Opens a new window displaying the CSV data as a table."""
         table_window = TableWindow(csv_file)
-        self.open_windows.append(table_window)
+        self.open_table_windows.append(table_window)
         table_window.show()
 
+        # Remove the window from the list when it is closed
+        table_window.destroyed.connect(
+            lambda: self.open_table_windows.remove(table_window)
+        )
+
     def show_column_selection(self, csv_file):
-        """Opens a new window for column selection."""
-        self.column_selection_window = ColumnSelectionWindow(csv_file, self)
-        self.column_selection_window.show()
+        """Opens a new column selection window."""
+        column_selection_window = ColumnSelectionWindow(csv_file, self)
+        self.open_column_selection_windows.append(column_selection_window)
+        column_selection_window.show()
+
+        # Remove the window from the list when it is closed
+        column_selection_window.destroyed.connect(
+            lambda: self.open_column_selection_windows.remove(column_selection_window)
+        )
 
     def plot_graph(self, csv_file, columns):
-        """Plots the selected columns from the CSV file using Plotly."""
+        """Plots the selected columns from the CSV file using Bokeh."""
         df = pd.read_csv(csv_file)
-    
         if " time (us)" not in df.columns:
             print("CSV file missing 'time (us)' column.")
             return
 
-        df = df.rename(columns={" time (us)": "time_us"})  # fix column name
-        fig = px.line(df, x="time_us", y=columns, title=f"Graph for {os.path.basename(csv_file)}")
-        fig.update_layout(xaxis_title="Time (us)", yaxis_title="Values")
-        fig.show()
+        df = df.rename(columns={" time (us)": "time_us"})  # Fix column name
+
+        # Create a Bokeh figure
+        p = figure(title=f"Graph for {os.path.basename(csv_file)}",
+                   x_axis_label="Time (us)", y_axis_label="Values",
+                   tooltips=[("Time (us)", "$x"), ("Value", "$y")],
+                   width=900, height=600)
+
+        # Use a color palette to assign unique colors to each column
+        colors = Category10[len(columns)] if len(columns) <= 10 else Category10[10] * (len(columns) // 10 + 1)
+
+        # Add lines for each selected column with a unique color
+        for i, column in enumerate(columns):
+            p.line(df["time_us"], df[column], legend_label=column, line_width=2, color=colors[i])
+
+        # Customize the legend
+        p.legend.title = "Columns"
+        p.legend.location = "top_left"
+
+        # Save the plot to an HTML file and open it in the browser
+        output_file("plot.html")
+        show(p)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

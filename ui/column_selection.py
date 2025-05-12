@@ -4,17 +4,17 @@ from PyQt6.QtWidgets import QWidget, QVBoxLayout, QListWidget, QPushButton, QMes
 
 class ColumnSelectionWindow(QWidget):
     """Allows the user to select columns for graphing and view raw CSV."""
-    def __init__(self, csv_file, parent):
+    def __init__(self, csv_file, parent=None):
         super().__init__()
         self.csv_file = csv_file
-        self.parent = parent
+        self.parent = parent  # Optional parent reference for callbacks
 
         self.setWindowTitle(f"Select Columns for Graph - {os.path.basename(csv_file)}")
         self.setGeometry(200, 200, 400, 400)
 
         layout = QVBoxLayout()
         self.list_widget = QListWidget()
-        self.list_widget.setSelectionMode(QListWidget.SelectionMode.MultiSelection)  # Corrected line
+        self.list_widget.setSelectionMode(QListWidget.SelectionMode.MultiSelection)
         self.load_columns()
 
         # Button to plot the graph
@@ -33,7 +33,7 @@ class ColumnSelectionWindow(QWidget):
     def load_columns(self):
         """Loads column names from the CSV file, excluding 'time (us)'."""
         df = pd.read_csv(self.csv_file)
-        columns = [col for col in df.columns if col != "time (us)"]  # Exclude 'time (us)'
+        columns = [col for col in df.columns if col != " time (us)"]  # Exclude 'time (us)'
         self.list_widget.addItems(columns)
 
     def plot_graph(self):
@@ -43,8 +43,10 @@ class ColumnSelectionWindow(QWidget):
             QMessageBox.warning(self, "No Columns Selected", "Please select at least one column to plot.")
             return
 
-        self.parent.plot_graph(self.csv_file, selected_columns)
+        if self.parent:
+            self.parent.plot_graph(self.csv_file, selected_columns)
 
     def view_csv(self):
         """Opens the raw CSV file in a table view."""
-        self.parent.show_table(self.csv_file)
+        if self.parent:
+            self.parent.show_table(self.csv_file)
