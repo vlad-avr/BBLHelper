@@ -3,30 +3,30 @@ import subprocess
 import shutil
 
 # Keywords of headers to keep
-keywords = [
-    "PID",
-    "rateProfileValues",
-    "gyro",
-    "accel",
-    "dterm",
-    "looptime",
-    "blackbox_rate",
-    "firmware",
-    "Product",
-    "feature",
-    "rcSmoothing",
-    "setpoint",
-    "anti_gravity",
-    "dynamic_filter",
-    "DynLPF",
-    "gyro_lowpass",
-    "dterm_lowpass",
-    "yaw_lowpass"
-    ]
+# keywords = [
+#     "PID",
+#     "rateProfileValues",
+#     "gyro",
+#     "accel",
+#     "dterm",
+#     "looptime",
+#     "blackbox_rate",
+#     "firmware",
+#     "Product",
+#     "feature",
+#     "rcSmoothing",
+#     "setpoint",
+#     "anti_gravity",
+#     "dynamic_filter",
+#     "DynLPF",
+#     "gyro_lowpass",
+#     "dterm_lowpass",
+#     "yaw_lowpass"
+#     ]
 def convert_bbl_to_csv(bbl_file: str, output_dir: str) -> str | None:
     """
     Converts a .bbl file to multiple output files (.csv and .event) using blackbox_decode.exe.
-    Extracts header lines into a headers.txt file.
+    Extracts unique header lines into a headers.txt file.
 
     Args:
         bbl_file (str): Full path to the .bbl file (e.g., "D:\\path\\to\\log.bbl")
@@ -45,14 +45,18 @@ def convert_bbl_to_csv(bbl_file: str, output_dir: str) -> str | None:
     decoder_exe_path = os.path.abspath(decoder_exe_path)  # Normalize the path
 
     try:
-        # Extract headers from the .bbl file
+        # Extract unique headers from the .bbl file
         headers_file_path = os.path.join(output_dir, "headers.txt")
+        seen_headers = set()  # Track unique headers
         with open(bbl_file, "r", encoding="latin-1") as bbl:  # Use 'latin-1' encoding
             with open(headers_file_path, "w", encoding="utf-8") as headers_file:
                 for line in bbl:
                     if line.startswith("H "):
-                        if any(kw.lower() in line.lower() for kw in keywords):
-                            headers_file.write(line[2:].strip() + "\n")
+                        header_content = line[2:].strip()  # Remove "H " prefix and strip whitespace
+                        # if any(kw.lower() in header_content.lower() for kw in keywords):
+                        if header_content not in seen_headers:  # Check for duplicates
+                            headers_file.write(header_content + "\n")
+                            seen_headers.add(header_content)  # Add to the set
 
         # Run the decoder
         subprocess.run([decoder_exe_path, bbl_file], stderr=subprocess.PIPE, check=True)
