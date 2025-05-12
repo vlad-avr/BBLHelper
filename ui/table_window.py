@@ -1,9 +1,9 @@
 import os
-import pandas as pd
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QTableWidget, QTableWidgetItem
+from src.data_processor import load_and_clean_csv  # Import the data processing logic
 
 class TableWindow(QWidget):
-    """Displays the selected CSV log data as a table."""
+    """Displays the processed CSV log data as a table."""
     def __init__(self, csv_file):
         super().__init__()
 
@@ -18,8 +18,11 @@ class TableWindow(QWidget):
         self.setLayout(layout)
 
     def load_csv(self, csv_file):
-        """Loads CSV data into the table widget."""
-        df = pd.read_csv(csv_file)
+        """Loads processed CSV data into the table widget."""
+        # Use the load_and_clean_csv function to process the DataFrame
+        df = load_and_clean_csv(csv_file)
+
+        # Set up the table with the processed DataFrame
         self.table.setRowCount(len(df))
         self.table.setColumnCount(len(df.columns))
         self.table.setHorizontalHeaderLabels(df.columns)

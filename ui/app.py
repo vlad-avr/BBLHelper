@@ -5,9 +5,9 @@ from PyQt6.QtWidgets import QApplication, QMainWindow, QLabel, QVBoxLayout, QWid
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtCore import QUrl  # Import QUrl
 import tempfile
+from itertools import cycle, islice  # Import cycle and islice to repeat and limit colors
+import random  # Import random for generating random colors
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--disable-gpu --disable-software-rasterizer"  # Disable GPU acceleration
-os.environ["QT_QUICK_BACKEND"] = "software"
 from ui.table_window import TableWindow
 from ui.file_selection import FileSelectionWindow
 from ui.column_selection import ColumnSelectionWindow
@@ -15,6 +15,7 @@ import plotly.express as px
 from src.converter import convert_bbl_to_csv  # Import the converter logic
 from bokeh.plotting import figure, output_file, show  # Import Bokeh for plotting
 from bokeh.palettes import Category10  # Import a color palette
+from src.data_processor import load_and_clean_csv  # Import the data processing logic
 
 class MainWindow(QMainWindow):
     """Main Window with file selection and processing."""
@@ -119,25 +120,31 @@ class MainWindow(QMainWindow):
 
     def plot_graph(self, csv_file, columns):
         """Plots the selected columns from the CSV file using Bokeh."""
-        df = pd.read_csv(csv_file)
-        if " time (us)" not in df.columns:
-            print("CSV file missing 'time (us)' column.")
+        # Load and clean the CSV file
+        df = load_and_clean_csv(csv_file)
+
+        # Ensure "time_us" column exists after cleaning
+        if "time_ms" not in df.columns:
+            print("No valid 'time_ms' column found after cleaning.")
             return
 
-        df = df.rename(columns={" time (us)": "time_us"})  # Fix column name
+        if len(columns) > 50:
+            print("Too many columns selected for plotting. Please select fewer columns.")
+            return
 
         # Create a Bokeh figure
         p = figure(title=f"Graph for {os.path.basename(csv_file)}",
-                   x_axis_label="Time (us)", y_axis_label="Values",
-                   tooltips=[("Time (us)", "$x"), ("Value", "$y")],
+                   x_axis_label="Time (ms)", y_axis_label="Values",
+                   tooltips=[("Time (ms)", "$x"), ("Value", "$y")],
                    width=900, height=600)
 
-        # Use a color palette to assign unique colors to each column
-        colors = Category10[len(columns)] if len(columns) <= 10 else Category10[10] * (len(columns) // 10 + 1)
+        # Generate random colors for each column
+        colors = ["#" + ''.join(random.choices("0123456789ABCDEF", k=6)) for _ in columns]
 
         # Add lines for each selected column with a unique color
         for i, column in enumerate(columns):
-            p.line(df["time_us"], df[column], legend_label=column, line_width=2, color=colors[i])
+            if column in df.columns:  # Ensure the column exists after cleaning
+                p.line(df["time_ms"], df[column], legend_label=column, line_width=2, color=colors[i])
 
         # Customize the legend
         p.legend.title = "Columns"

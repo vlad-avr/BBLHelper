@@ -37,7 +37,7 @@ class ColumnSelectionWindow(QWidget):
         self.list_widget.addItems(columns)
 
     def plot_graph(self):
-        """Plots the selected columns."""
+        """Plots the selected columns and clears the selection."""
         selected_columns = [item.text() for item in self.list_widget.selectedItems()]
         if not selected_columns:
             QMessageBox.warning(self, "No Columns Selected", "Please select at least one column to plot.")
@@ -45,6 +45,9 @@ class ColumnSelectionWindow(QWidget):
 
         if self.parent:
             self.parent.plot_graph(self.csv_file, selected_columns)
+
+        # Clear the selection after plotting
+        self.list_widget.clearSelection()
 
     def view_csv(self):
         """Opens the raw CSV file in a table view."""
