@@ -1,33 +1,129 @@
 import os
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QTableWidget, QTableWidgetItem
-from src.data_processor import load_and_clean_csv  # Import the data processing logic
+import pandas as pd
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem, QLabel
+from src.data_processor import load_and_clean_csv
 
 class TableWindow(QWidget):
-    """Displays the processed CSV log data as a table."""
+    """Displays the processed CSV log data and analysis results."""
     def __init__(self, csv_file):
         super().__init__()
 
         self.setWindowTitle(f"Blackbox Log Data - {os.path.basename(csv_file)}")
-        self.setGeometry(150, 150, 900, 500)
+        self.setGeometry(150, 150, 1200, 600)  # Adjusted width for two sections
 
-        layout = QVBoxLayout()
-        self.table = QTableWidget()
+        # Main layout (horizontal split)
+        main_layout = QHBoxLayout()
+
+        # Left section: Raw CSV data
+        left_layout = QVBoxLayout()
+        self.raw_table = QTableWidget()
         self.load_csv(csv_file)
+        left_layout.addWidget(QLabel("Raw CSV Data"))
+        left_layout.addWidget(self.raw_table)
 
-        layout.addWidget(self.table)
-        self.setLayout(layout)
+        # Right section: Analysis results
+        right_layout = QVBoxLayout()
+        self.analysis_table = QTableWidget()
+        self.perform_analysis(csv_file)
+        right_layout.addWidget(QLabel("Analysis Results"))
+        right_layout.addWidget(self.analysis_table)
+
+        # Add left and right sections to the main layout
+        main_layout.addLayout(left_layout)
+        main_layout.addLayout(right_layout)
+
+        self.setLayout(main_layout)
 
     def load_csv(self, csv_file):
         """Loads processed CSV data into the table widget."""
         # Use the load_and_clean_csv function to process the DataFrame
-        df = load_and_clean_csv(csv_file)
+        df = load_and_clean_csv(csv_file, load_non_numeric=True)
 
         # Set up the table with the processed DataFrame
-        self.table.setRowCount(len(df))
-        self.table.setColumnCount(len(df.columns))
-        self.table.setHorizontalHeaderLabels(df.columns)
+        self.raw_table.setRowCount(len(df))
+        self.raw_table.setColumnCount(len(df.columns))
+        self.raw_table.setHorizontalHeaderLabels(df.columns)
 
         for row in range(len(df)):
             for col in range(len(df.columns)):
                 item = QTableWidgetItem(str(df.iloc[row, col]))
-                self.table.setItem(row, col, item)
+                self.raw_table.setItem(row, col, item)
+
+    def perform_analysis(self, csv_file):
+        """Performs data analysis and displays the results in the analysis table."""
+        df = load_and_clean_csv(csv_file, load_non_numeric=True)
+
+        # Prepare analysis results
+        analysis_results = []
+
+        # 1. Tracking Error (Setpoint vs Gyro)
+        if " setpoint[0]" in df.columns and " gyroADC[0]" in df.columns:
+            mae_roll = (df[" setpoint[0]"] - df[" gyroADC[0]"]).abs().mean()
+            rmse_roll = ((df[" setpoint[0]"] - df[" gyroADC[0]"])**2).mean()**0.5
+            analysis_results.append(["MAE (Roll)", f"{mae_roll:.2f}"])
+            analysis_results.append(["RMSE (Roll)", f"{rmse_roll:.2f}"])
+
+        # 2. PID Balance Metrics
+        if all(col in df.columns for col in [" axisP[0]", " axisI[0]", " axisD[0]"]):
+            total_pid = df[" axisP[0]"].abs().sum()+df[" axisI[0]"].abs().sum()+df[" axisD[0]"].abs().sum()
+            p_contrib = df[" axisP[0]"].abs().sum() / total_pid * 100
+            i_contrib = df[" axisI[0]"].abs().sum() / total_pid * 100
+            d_contrib = df[" axisD[0]"].abs().sum() / total_pid * 100
+            analysis_results.append(["P Contribution (%)", f"{p_contrib:.2f}%"])
+            analysis_results.append(["I Contribution (%)", f"{i_contrib:.2f}%"])
+            analysis_results.append(["D Contribution (%)", f"{d_contrib:.2f}%"])
+
+        # 3. Overshoot and Bounceback
+        if " gyroADC[0]" in df.columns and " setpoint[0]" in df.columns:
+            overshoot = (df[" gyroADC[0]"] - df[" setpoint[0]"]).max()
+            analysis_results.append(["Max Overshoot (Roll)", f"{overshoot:.2f}"])
+
+        # 4. Noise & Jitter (Filtering)
+        if " gyroADC[0]" in df.columns:
+            noise_roll = df[" gyroADC[0]"].diff().std()
+            analysis_results.append(["Gyro Noise Std (Roll)", f"{noise_roll:.2f}"])
+
+        # 5. Battery Voltage Sag
+        if " vbatLatest (V)" in df.columns:
+            min_voltage = df[" vbatLatest (V)"].min()
+            voltage_drop = df[" vbatLatest (V)"].max() - min_voltage
+            analysis_results.append(["Min Voltage", f"{min_voltage:.2f}V"])
+            analysis_results.append(["Voltage Drop", f"{voltage_drop:.2f}V"])
+
+        if "throttle" in df.columns and " vbatLatest (V)" in df.columns:
+            correlation = df["throttle"].corr(df[" vbatLatest (V)"])
+            analysis_results.append(["Throttle-Voltage Correlation", f"{correlation:.2f}"])
+
+        # 6. Command Latency
+        if " setpoint[0]" in df.columns and "gyroADC[0]" in df.columns:
+            df["roll_error"] = df["setpoint[0]"] - df["gyroADC[0]"]
+            # Placeholder for cross-correlation lag calculation
+            analysis_results.append(["Command Latency (Lag)", "Not Implemented"])
+
+        # 7. Motor Output Symmetry
+        motor_columns = [col for col in df.columns if col.startswith(" motor[")]
+        if motor_columns:
+            motor_imbalance = df[motor_columns].std(axis=1).mean()
+            analysis_results.append(["Motor Imbalance (Std)", f"{motor_imbalance:.2f}"])
+
+        # 8. Runtime Statistics
+        if "time_ms" in df.columns:
+            flight_time = (df["time_ms"].iloc[-1] - df["time_ms"].iloc[0])/1000  # Convert to seconds
+            analysis_results.append(["Flight Time (s)", f"{flight_time:.2f}s"])
+
+        if "throttle" in df.columns:
+            avg_throttle = df["throttle"].mean()
+            analysis_results.append(["Avg Throttle", f"{avg_throttle:.2f}"])
+
+        if " amperageLatest (A)" in df.columns:
+            max_current = df[" amperageLatest (A)"].max()
+            analysis_results.append(["Max Current", f"{max_current:.2f}A"])
+
+        # Populate the analysis table
+        self.analysis_table.setRowCount(len(analysis_results))
+        self.analysis_table.setColumnCount(2)
+        self.analysis_table.setHorizontalHeaderLabels(["Metric", "Value"])
+
+        for row, (metric, value) in enumerate(analysis_results):
+            self.analysis_table.setItem(row, 0, QTableWidgetItem(metric))
+            self.analysis_table.setItem(row, 1, QTableWidgetItem(value))

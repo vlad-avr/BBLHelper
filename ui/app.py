@@ -1,9 +1,12 @@
 import sys
 import os
 import pandas as pd
-from PyQt6.QtWidgets import QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget, QPushButton, QFileDialog, QMessageBox
+from PyQt6.QtWidgets import (
+    QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget, QPushButton, QFileDialog, QMessageBox, QToolBar, QTextEdit, QLineEdit
+)
+from PyQt6.QtGui import QAction  # Import QAction from PyQt6.QtGui
 from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtCore import QUrl  # Import QUrl
+from PyQt6.QtCore import QUrl, Qt  # Import QUrl and Qt
 import tempfile
 from itertools import cycle, islice  # Import cycle and islice to repeat and limit colors
 import random  # Import random for generating random colors
@@ -16,40 +19,75 @@ from src.converter import convert_bbl_to_csv  # Import the converter logic
 from bokeh.plotting import figure, output_file, show  # Import Bokeh for plotting
 from bokeh.palettes import Category10  # Import a color palette
 from src.data_processor import load_and_clean_csv  # Import the data processing logic
+from src.data_processor import (
+    plot_pid_loop_analysis,
+    plot_throttle_voltage,
+    plot_motor_desync,
+    plot_stick_input_vs_movement,  # Import the Stick Input vs. Actual Movement plot function
+)
 
 class MainWindow(QMainWindow):
-    """Main Window with file selection and processing."""
+    """Main Window with file selection, processing, and AI assistant chat."""
     def __init__(self):
         super().__init__()
 
         self.setWindowTitle("UAV Blackbox Analyzer")
         self.setGeometry(100, 100, 800, 600)
 
+        # Create a toolbar
+        self.toolbar = QToolBar("Main Toolbar")
+        self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self.toolbar)
+
+        # Add buttons to the toolbar
+        decode_action = QAction("Decode Blackbox Log", self)
+        decode_action.triggered.connect(self.open_file_dialog)
+        self.toolbar.addAction(decode_action)
+
+        open_folder_action = QAction("Open Decoded Folder", self)
+        open_folder_action.triggered.connect(self.open_decoded_folder)
+        self.toolbar.addAction(open_folder_action)
+
+        # Central widget for the chat interface
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
 
         layout = QVBoxLayout()
 
-        self.label = QLabel("Select an option:")
-        self.label.setStyleSheet("font-size: 14px;")
+        # Chat display area
+        self.chat_display = QTextEdit()
+        self.chat_display.setReadOnly(True)
+        self.chat_display.setStyleSheet("font-size: 14px;")
+        layout.addWidget(self.chat_display)
 
-        # Button to decode a new .bbl file
-        self.decode_button = QPushButton("Decode New Blackbox Log (.bbl)")
-        self.decode_button.clicked.connect(self.open_file_dialog)
+        # Chat input area
+        self.chat_input = QLineEdit()
+        self.chat_input.setPlaceholderText("Type your message here...")
+        self.chat_input.returnPressed.connect(self.handle_chat_input)
+        layout.addWidget(self.chat_input)
 
-        # Button to open an already decoded folder
-        self.open_folder_button = QPushButton("Open Decoded Folder")
-        self.open_folder_button.clicked.connect(self.open_decoded_folder)
-
-        layout.addWidget(self.label)
-        layout.addWidget(self.decode_button)
-        layout.addWidget(self.open_folder_button)
         central_widget.setLayout(layout)
 
         # Keep track of open windows
         self.open_file_selection_windows = []  # Track multiple file selection windows
         self.open_column_selection_windows = []  # Track multiple column selection windows
         self.open_table_windows = []  # Track multiple table windows
+
+    def closeEvent(self, event):
+        """Closes all child windows when the main window is closed."""
+        # Close all file selection windows
+        for window in self.open_file_selection_windows:
+            window.close()
+
+        # Close all column selection windows
+        for window in self.open_column_selection_windows:
+            window.close()
+
+        # Close all table windows
+        for window in self.open_table_windows:
+            window.close()
+
+        # Accept the close event to proceed with closing the main window
+        event.accept()
 
     def open_file_dialog(self):
         """Opens a file dialog to select a .bbl log file and process it."""
@@ -64,16 +102,16 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, "No Folder Selected", "Please select a folder to save the decoded files.")
                 return
 
-            self.label.setText(f"Processing: {file_path}")
+            self.chat_display.append(f"Processing: {file_path}")
             output_dir = os.path.join(output_dir, os.path.basename(file_path).replace(".bbl", "_output"))
             os.makedirs(output_dir, exist_ok=True)
 
             generated_dir = convert_bbl_to_csv(file_path, output_dir)
             if generated_dir:
-                self.label.setText(f"Files generated in: {generated_dir}")
+                self.chat_display.append(f"Files generated in: {generated_dir}")
                 self.show_file_selection(generated_dir)
             else:
-                self.label.setText("Conversion failed!")
+                self.chat_display.append("Conversion failed!")
                 QMessageBox.critical(self, "Error", "Failed to convert the .bbl file. Please check the file and try again.")
 
     def open_decoded_folder(self):
@@ -82,7 +120,7 @@ class MainWindow(QMainWindow):
             self, "Select Decoded Folder", ""
         )
         if folder_path:
-            self.label.setText(f"Opening folder: {folder_path}")
+            self.chat_display.append(f"Opening folder: {folder_path}")
             self.show_file_selection(folder_path)
 
     def show_file_selection(self, output_dir):
@@ -153,6 +191,33 @@ class MainWindow(QMainWindow):
         # Save the plot to an HTML file and open it in the browser
         output_file("plot.html")
         show(p)
+
+    def plot_pid_loop_analysis(self, csv_file):
+        """Calls the PID Loop Analysis plot function."""
+        plot_pid_loop_analysis(csv_file)
+
+    def plot_throttle_voltage(self, csv_file):
+        """Calls the Throttle and Voltage Drop plot function."""
+        plot_throttle_voltage(csv_file)
+
+    def plot_motor_desync(self, csv_file):
+        """Calls the Motor Desync or Oscillations plot function."""
+        plot_motor_desync(csv_file)
+
+    def plot_stick_input_vs_movement(self, csv_file):
+        """Calls the Stick Input vs. Actual Movement plot function."""
+        plot_stick_input_vs_movement(csv_file)
+
+    def handle_chat_input(self):
+        """Handles user input in the chat interface."""
+        user_message = self.chat_input.text().strip()
+        if user_message:
+            self.chat_display.append(f"You: {user_message}")
+            self.chat_input.clear()
+
+            # Simulate AI response (replace with actual AI logic)
+            ai_response = f"AI: I'm here to assist you with your UAV data analysis!"
+            self.chat_display.append(ai_response)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

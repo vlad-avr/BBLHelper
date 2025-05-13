@@ -26,7 +26,7 @@ import shutil
 def convert_bbl_to_csv(bbl_file: str, output_dir: str) -> str | None:
     """
     Converts a .bbl file to multiple output files (.csv and .event) using blackbox_decode.exe.
-    Extracts unique header lines into a headers.txt file.
+    Extracts unique header lines into a headers.txt file, skipping the first header.
 
     Args:
         bbl_file (str): Full path to the .bbl file (e.g., "D:\\path\\to\\log.bbl")
@@ -48,12 +48,15 @@ def convert_bbl_to_csv(bbl_file: str, output_dir: str) -> str | None:
         # Extract unique headers from the .bbl file
         headers_file_path = os.path.join(output_dir, "headers.txt")
         seen_headers = set()  # Track unique headers
+        first_header_skipped = False  # Flag to skip the first header
         with open(bbl_file, "r", encoding="latin-1") as bbl:  # Use 'latin-1' encoding
             with open(headers_file_path, "w", encoding="utf-8") as headers_file:
                 for line in bbl:
                     if line.startswith("H "):
+                        if not first_header_skipped:
+                            first_header_skipped = True  # Skip the first header
+                            continue
                         header_content = line[2:].strip()  # Remove "H " prefix and strip whitespace
-                        # if any(kw.lower() in header_content.lower() for kw in keywords):
                         if header_content not in seen_headers:  # Check for duplicates
                             headers_file.write(header_content + "\n")
                             seen_headers.add(header_content)  # Add to the set

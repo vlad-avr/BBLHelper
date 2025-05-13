@@ -25,7 +25,7 @@ motorOutput:158,2047
 acc_1G:2048
 vbat_scale:110
 vbatcellvoltage:330,350,430
-vbatref:2442
+vbatref:2435
 currentSensor:0,400
 looptime:125
 gyro_sync_denom:1
@@ -121,8 +121,8 @@ rc_smoothing_feedforward_cutoff:0
 rc_smoothing_setpoint_cutoff:0
 rc_smoothing_throttle_cutoff:0
 rc_smoothing_debug_axis:0
-rc_smoothing_active_cutoffs_ff_sp_thr:67,67,67
-rc_smoothing_rx_average:5615
+rc_smoothing_active_cutoffs_ff_sp_thr:72,72,72
+rc_smoothing_rx_average:5199
 rates_type:3
 fields_disabled_mask:0
 blackbox_high_resolution:0
@@ -151,7 +151,10 @@ throttle_limit_percent:100
 throttle_boost:5
 throttle_boost_cutoff:15
 vbatref:2434
-vbatref:2436
 vbatref:2432
-vbatref:2440
+vbatref:2427
 vbatref:2431
+vbatref:2436
+vbatref:2429
+vbatref:2433
+vbatref:2424
