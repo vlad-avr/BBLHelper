@@ -10,6 +10,7 @@ from PyQt6.QtCore import QUrl, Qt  # Import QUrl and Qt
 import tempfile
 from itertools import cycle, islice  # Import cycle and islice to repeat and limit colors
 import random  # Import random for generating random colors
+import markdown  # Add this import at the top
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from ui.table_window import TableWindow
 from ui.file_selection import FileSelectionWindow
@@ -25,6 +26,7 @@ from src.data_processor import (
     plot_motor_desync,
     plot_stick_input_vs_movement,  # Import the Stick Input vs. Actual Movement plot function
 )
+from src.assistant import ask_chatgpt
 
 class MainWindow(QMainWindow):
     """Main Window with file selection, processing, and AI assistant chat."""
@@ -212,12 +214,26 @@ class MainWindow(QMainWindow):
         """Handles user input in the chat interface."""
         user_message = self.chat_input.text().strip()
         if user_message:
-            self.chat_display.append(f"You: {user_message}")
+            # User message: blue, bold
+            user_html = f'<div style="color:#1565c0;"><b>You:</b> {user_message}</div>'
+            self.chat_display.append(user_html)
             self.chat_input.clear()
 
-            # Simulate AI response (replace with actual AI logic)
-            ai_response = f"AI: I'm here to assist you with your UAV data analysis!"
-            self.chat_display.append(ai_response)
+            # Prepare message history (for now, just the latest user message)
+            messages = [
+                {"role": "system", "content": "You are a helpful assistant for UAV data analysis."},
+                {"role": "user", "content": user_message}
+            ]
+
+            try:
+                ai_response = ask_chatgpt(messages)
+            except Exception as e:
+                ai_response = f"AI: Error communicating with ChatGPT: {e}"
+
+            # Convert markdown to HTML for tables/lists
+            ai_html_content = markdown.markdown(ai_response, extensions=['tables'])
+            ai_html = f'<div style="color:#388e3c;"><b>AI:</b> <br>{ai_html_content}</div>'
+            self.chat_display.append(ai_html)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
