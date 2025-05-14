@@ -2,7 +2,7 @@ import sys
 import os
 import pandas as pd
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget, QPushButton, QFileDialog, QMessageBox, QToolBar, QTextEdit, QLineEdit
+    QApplication, QMainWindow, QLabel, QVBoxLayout, QHBoxLayout, QWidget, QPushButton, QFileDialog, QMessageBox, QToolBar, QTextEdit, QLineEdit, QComboBox
 )
 from PyQt6.QtGui import QAction  # Import QAction from PyQt6.QtGui
 from PyQt6.QtWebEngineWidgets import QWebEngineView
@@ -61,12 +61,26 @@ class MainWindow(QMainWindow):
         self.chat_display.setStyleSheet("font-size: 14px;")
         layout.addWidget(self.chat_display)
 
-        # Chat input area
+        # --- Input row: chat input (left) + model selector (right) ---
+        input_row = QHBoxLayout()
+
         self.chat_input = QLineEdit()
         self.chat_input.setPlaceholderText("Type your message here...")
         self.chat_input.returnPressed.connect(self.handle_chat_input)
-        layout.addWidget(self.chat_input)
+        input_row.addWidget(self.chat_input, stretch=1)
 
+        self.model_selector = QComboBox()
+        self.model_selector.addItems([
+            "gpt-3.5-turbo",      # Default
+            "gpt-4-1106-preview", # GPT-4.1
+            "gpt-4-1106-vision-preview", # GPT-4.1 mini (example, adjust as needed)
+            "gpt-4o",             # OpenAI o4-mini
+            "gpt-4-0125-preview", # GPT-4.1 nano (example, adjust as needed)
+        ])
+        self.model_selector.setCurrentText("gpt-3.5-turbo")
+        input_row.addWidget(self.model_selector)
+
+        layout.addLayout(input_row)
         central_widget.setLayout(layout)
 
         # Keep track of open windows
@@ -214,26 +228,34 @@ class MainWindow(QMainWindow):
         """Handles user input in the chat interface."""
         user_message = self.chat_input.text().strip()
         if user_message:
-            # User message: blue, bold
-            user_html = f'<div style="color:#1565c0;"><b>You:</b> {user_message}</div>'
-            self.chat_display.append(user_html)
+            user_html = (
+                '<div style="color:#1565c0;">'
+                '<b>You:</b> {}</div>'
+            ).format(user_message)
+            self.chat_display.insertHtml(user_html)
+            self.chat_display.insertPlainText("\n")
             self.chat_input.clear()
 
-            # Prepare message history (for now, just the latest user message)
+            # Get selected model
+            selected_model = self.model_selector.currentText()
+
             messages = [
                 {"role": "system", "content": "You are a helpful assistant for UAV data analysis."},
                 {"role": "user", "content": user_message}
             ]
 
             try:
-                ai_response = ask_chatgpt(messages)
+                ai_response = ask_chatgpt(messages, model=selected_model)
             except Exception as e:
                 ai_response = f"AI: Error communicating with ChatGPT: {e}"
 
-            # Convert markdown to HTML for tables/lists
             ai_html_content = markdown.markdown(ai_response, extensions=['tables'])
-            ai_html = f'<div style="color:#388e3c;"><b>AI:</b> <br>{ai_html_content}</div>'
-            self.chat_display.append(ai_html)
+            ai_html = (
+                '<div style="color:#388e3c;">'
+                '<b>AI:</b> {}</div>'
+            ).format(ai_html_content)
+            self.chat_display.insertHtml(ai_html)
+            self.chat_display.insertPlainText("\n")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
