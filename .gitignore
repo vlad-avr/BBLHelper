@@ -1,4 +1,25 @@
-.bbl
-.csv
-.txt
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+.env/
+.venv/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Environment variables
 .env
+
+# VS Code settings
+.vscode/
+
+# Data files
+*.csv
+*.json
+*.bbl
+*.event
+*.txt
