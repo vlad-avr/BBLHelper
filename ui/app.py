@@ -2,15 +2,16 @@ import sys
 import os
 import pandas as pd
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QLabel, QVBoxLayout, QHBoxLayout, QWidget, QPushButton, QFileDialog, QMessageBox, QToolBar, QTextEdit, QLineEdit, QComboBox, QMenu
+    QApplication, QMainWindow, QLabel, QVBoxLayout, QHBoxLayout, QWidget, QPushButton, QFileDialog, QMessageBox, QToolBar, QTextEdit, QLineEdit, QComboBox, QMenu, QListWidget, QListWidgetItem
 )
 from PyQt6.QtGui import QAction  # QAction ONLY from QtGui
 from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtCore import QUrl, Qt  # Import QUrl and Qt
+from PyQt6.QtCore import QUrl, Qt, QThread, pyqtSignal  # Import QUrl, Qt, QThread, and pyqtSignal
 import tempfile
 from itertools import cycle, islice  # Import cycle and islice to repeat and limit colors
 import random  # Import random for generating random colors
 import markdown  # Add this import at the top
+import base64  # Import base64 for encoding images
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from ui.table_window import TableWindow
 from ui.file_selection import FileSelectionWindow
@@ -28,6 +29,22 @@ from src.data_processor import (
     plot_stick_input_vs_movement,  # Import the Stick Input vs. Actual Movement plot function
 )
 from src.assistant import ask_chatgpt
+
+class ChatWorker(QThread):
+    finished = pyqtSignal(str)
+    error = pyqtSignal(str)
+
+    def __init__(self, messages, model):
+        super().__init__()
+        self.messages = messages
+        self.model = model
+
+    def run(self):
+        try:
+            ai_response = ask_chatgpt(self.messages, model=self.model)
+            self.finished.emit(ai_response)
+        except Exception as e:
+            self.error.emit(f"AI: Error communicating with ChatGPT: {e}")
 
 class MainWindow(QMainWindow):
     """Main Window with file selection, processing, and AI assistant chat."""
@@ -74,9 +91,9 @@ class MainWindow(QMainWindow):
         self.model_selector.addItems([
             "gpt-3.5-turbo",      # Default
             "gpt-4-1106-preview", # GPT-4.1
-            "gpt-4-1106-vision-preview", # GPT-4.1 mini (example, adjust as needed)
+            "gpt-4.1-mini-2025-04-14", # GPT-4.1 mini (example, adjust as needed)
             "gpt-4o",             # OpenAI o4-mini
-            "gpt-4-0125-preview", # GPT-4.1 nano (example, adjust as needed)
+            "gpt-4.1-nano-2025-04-14", # GPT-4.1 nano (example, adjust as needed)
         ])
         self.model_selector.setCurrentText("gpt-3.5-turbo")
         input_row.addWidget(self.model_selector)
@@ -93,7 +110,18 @@ class MainWindow(QMainWindow):
         self.clear_contexts_button.clicked.connect(self.clear_chat_contexts)
         input_row.addWidget(self.clear_contexts_button)
 
+        self.attach_image_button = QPushButton("Attach Image")
+        self.attach_image_button.clicked.connect(self.attach_image_to_chat)
+        input_row.addWidget(self.attach_image_button)
+
         layout.addLayout(input_row)
+
+        self.image_list = QListWidget()
+        self.image_list.setMaximumHeight(60)
+        layout.addWidget(self.image_list)
+        self.image_list.setVisible(False)
+        self.image_list.itemDoubleClicked.connect(self.remove_selected_image)
+
         central_widget.setLayout(layout)
 
         # Keep track of open windows
@@ -102,6 +130,7 @@ class MainWindow(QMainWindow):
         self.open_table_windows = []  # Track multiple table windows
 
         self.chat_contexts = []  # List to store context strings
+        self.attached_images = []  # Store attached images for the next chat message
 
     def closeEvent(self, event):
         """Closes all child windows when the main window is closed."""
@@ -257,21 +286,74 @@ class MainWindow(QMainWindow):
             if context_idx >= 0:
                 context_str = self.chat_contexts[context_idx]
                 context_md = tsv_to_markdown(context_str)
-                messages.append({"role": "system", "content": f"Context:\n{context_md}"})
-            messages.append({"role": "user", "content": user_message})
+                messages.append({"role": "user", "content": f"Here is some context data:\n{context_md}"})
 
-            try:
-                ai_response = ask_chatgpt(messages, model=selected_model)
-            except Exception as e:
-                ai_response = f"AI: Error communicating with ChatGPT: {e}"
+            user_content = user_message
+            if self.attached_images:
+                content_blocks = [{"type": "text", "text": user_content}]
+                content_blocks.extend([img for _, img in self.attached_images])
+                messages.append({
+                    "role": "user",
+                    "content": content_blocks
+                })
+                self.attached_images.clear()
+                self.update_image_list()
+            else:
+                messages.append({"role": "user", "content": user_content})
 
-            ai_html_content = markdown.markdown(ai_response, extensions=['tables'])
-            ai_html = (
-                '<div style="color:#388e3c;">'
-                '<b>AI:</b> {}</div>'
-            ).format(ai_html_content)
-            self.chat_display.insertHtml(ai_html)
-            self.chat_display.insertPlainText("\n")
+            # Disable input while waiting
+            self.chat_input.setDisabled(True)
+            self.attach_image_button.setDisabled(True)
+            self.model_selector.setDisabled(True)
+            self.context_selector.setDisabled(True)
+
+            # Start worker thread
+            self.chat_worker = ChatWorker(messages, selected_model)
+            self.chat_worker.finished.connect(self.on_ai_response)
+            self.chat_worker.error.connect(self.on_ai_response)
+            self.chat_worker.start()
+
+    def on_ai_response(self, ai_response):
+        """Handles the AI response and updates the chat display."""
+        ai_html_content = markdown.markdown(ai_response, extensions=['tables'])
+        ai_html = (
+            '<div style="color:#388e3c;">'
+            '<b>AI:</b> {}</div>'
+        ).format(ai_html_content)
+        self.chat_display.insertHtml(ai_html)
+        self.chat_display.insertPlainText("\n")
+
+        # Re-enable input
+        self.chat_input.setDisabled(False)
+        self.attach_image_button.setDisabled(False)
+        self.model_selector.setDisabled(False)
+        self.context_selector.setDisabled(False)
+        self.chat_input.setFocus()
+
+    def attach_image_to_chat(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Select Image", "", "Images (*.png *.jpg *.jpeg *.bmp *.gif)"
+        )
+        if file_path:
+            with open(file_path, "rb") as img_file:
+                b64_img = base64.b64encode(img_file.read()).decode("utf-8")
+            image_data = {
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:image/png;base64,{b64_img}"
+                }
+            }
+            self.attached_images.append((os.path.basename(file_path), image_data))
+            self.update_image_list()
+            QMessageBox.information(self, "Image Attached", "Image will be sent with your next message.")
+        else:
+            pass  # No file selected
+
+    def update_image_list(self):
+        self.image_list.clear()
+        for fname, _ in self.attached_images:
+            self.image_list.addItem(fname)
+        self.image_list.setVisible(bool(self.attached_images))
 
     def show_table_context_menu(self, pos):
         menu = QMenu(self)
@@ -324,6 +406,11 @@ class MainWindow(QMainWindow):
             if self.context_selector.count() <= 1:
                 self.context_selector.setVisible(False)
                 self.clear_contexts_button.setVisible(False)
+
+    def remove_selected_image(self, item):
+        """Removes the selected image from the list."""
+        row = self.image_list.row(item)
+        self.image_list.takeItem(row)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

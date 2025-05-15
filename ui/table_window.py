@@ -31,6 +31,8 @@ class TableWindow(QWidget):
         # Right section: Analysis results
         right_layout = QVBoxLayout()
         self.analysis_table = QTableWidget()
+        self.analysis_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.analysis_table.customContextMenuRequested.connect(self.show_metrics_context_menu)
         self.perform_analysis(csv_file)
         right_layout.addWidget(QLabel("Analysis Results"))
         right_layout.addWidget(self.analysis_table)
@@ -166,3 +168,34 @@ class TableWindow(QWidget):
         add_context_action.triggered.connect(self.add_selection_to_chat_context)
         menu.addAction(add_context_action)
         menu.exec(self.raw_table.mapToGlobal(pos))
+
+    def show_metrics_context_menu(self, pos):
+        menu = QMenu(self)
+        add_context_action = QAction("Add context to chat", self)
+        add_context_action.triggered.connect(self.add_metrics_selection_to_chat_context)
+        menu.addAction(add_context_action)
+        menu.exec(self.analysis_table.mapToGlobal(pos))
+
+    def add_metrics_selection_to_chat_context(self):
+        selected_ranges = self.analysis_table.selectedRanges()
+        if not selected_ranges:
+            return
+
+        sel = selected_ranges[0]
+        rows = range(sel.topRow(), sel.bottomRow() + 1)
+        cols = range(sel.leftColumn(), sel.rightColumn() + 1)
+
+        # Extract header
+        headers = [self.analysis_table.horizontalHeaderItem(col).text() for col in cols]
+        extracted = ["\t".join(headers)]
+
+        # Extract data
+        for row in rows:
+            row_data = []
+            for col in cols:
+                item = self.analysis_table.item(row, col)
+                row_data.append(item.text() if item else "")
+            extracted.append("\t".join(row_data))
+
+        context_str = "\n".join(extracted)
+        self.context_extracted.emit(context_str)

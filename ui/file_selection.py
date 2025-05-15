@@ -47,6 +47,7 @@ class FileSelectionWindow(QWidget):
             return
 
         header_window = HeaderWindow(headers_file)
+        header_window.context_extracted.connect(self.parent.add_chat_context)  # <-- Connect here!
         self.open_header_windows.append(header_window)
         header_window.show()
 
