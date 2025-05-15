@@ -2,9 +2,9 @@ import sys
 import os
 import pandas as pd
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QLabel, QVBoxLayout, QHBoxLayout, QWidget, QPushButton, QFileDialog, QMessageBox, QToolBar, QTextEdit, QLineEdit, QComboBox
+    QApplication, QMainWindow, QLabel, QVBoxLayout, QHBoxLayout, QWidget, QPushButton, QFileDialog, QMessageBox, QToolBar, QTextEdit, QLineEdit, QComboBox, QMenu
 )
-from PyQt6.QtGui import QAction  # Import QAction from PyQt6.QtGui
+from PyQt6.QtGui import QAction  # QAction ONLY from QtGui
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtCore import QUrl, Qt  # Import QUrl and Qt
 import tempfile
@@ -15,6 +15,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from ui.table_window import TableWindow
 from ui.file_selection import FileSelectionWindow
 from ui.column_selection import ColumnSelectionWindow
+from src.context_processor import tsv_to_markdown  # Import the context processor
 import plotly.express as px
 from src.converter import convert_bbl_to_csv  # Import the converter logic
 from bokeh.plotting import figure, output_file, show  # Import Bokeh for plotting
@@ -80,6 +81,18 @@ class MainWindow(QMainWindow):
         self.model_selector.setCurrentText("gpt-3.5-turbo")
         input_row.addWidget(self.model_selector)
 
+        self.context_selector = QComboBox()
+        self.context_selector.setVisible(False)  # Hidden by default
+        self.context_selector.addItem("No context")  # Default option
+        self.context_selector.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.context_selector.customContextMenuRequested.connect(self.show_context_selector_menu)
+        input_row.addWidget(self.context_selector)
+
+        self.clear_contexts_button = QPushButton("Clear Contexts")
+        self.clear_contexts_button.setVisible(False)
+        self.clear_contexts_button.clicked.connect(self.clear_chat_contexts)
+        input_row.addWidget(self.clear_contexts_button)
+
         layout.addLayout(input_row)
         central_widget.setLayout(layout)
 
@@ -87,6 +100,8 @@ class MainWindow(QMainWindow):
         self.open_file_selection_windows = []  # Track multiple file selection windows
         self.open_column_selection_windows = []  # Track multiple column selection windows
         self.open_table_windows = []  # Track multiple table windows
+
+        self.chat_contexts = []  # List to store context strings
 
     def closeEvent(self, event):
         """Closes all child windows when the main window is closed."""
@@ -124,10 +139,8 @@ class MainWindow(QMainWindow):
 
             generated_dir = convert_bbl_to_csv(file_path, output_dir)
             if generated_dir:
-                self.chat_display.append(f"Files generated in: {generated_dir}")
                 self.show_file_selection(generated_dir)
             else:
-                self.chat_display.append("Conversion failed!")
                 QMessageBox.critical(self, "Error", "Failed to convert the .bbl file. Please check the file and try again.")
 
     def open_decoded_folder(self):
@@ -136,7 +149,6 @@ class MainWindow(QMainWindow):
             self, "Select Decoded Folder", ""
         )
         if folder_path:
-            self.chat_display.append(f"Opening folder: {folder_path}")
             self.show_file_selection(folder_path)
 
     def show_file_selection(self, output_dir):
@@ -153,6 +165,7 @@ class MainWindow(QMainWindow):
     def show_table(self, csv_file):
         """Opens a new window displaying the CSV data as a table."""
         table_window = TableWindow(csv_file)
+        table_window.context_extracted.connect(self.add_chat_context)  # Connect the signal
         self.open_table_windows.append(table_window)
         table_window.show()
 
@@ -179,11 +192,11 @@ class MainWindow(QMainWindow):
 
         # Ensure "time_us" column exists after cleaning
         if "time_ms" not in df.columns:
-            print("No valid 'time_ms' column found after cleaning.")
+            QMessageBox.criitical(self,"Error", "No valid 'time_ms' column found.")
             return
 
         if len(columns) > 50:
-            print("Too many columns selected for plotting. Please select fewer columns.")
+            QMessageBox.warning(self, "Too many columns selected for plotting.",  "Please select fewer columns.")
             return
 
         # Create a Bokeh figure
@@ -236,13 +249,16 @@ class MainWindow(QMainWindow):
             self.chat_display.insertPlainText("\n")
             self.chat_input.clear()
 
-            # Get selected model
             selected_model = self.model_selector.currentText()
 
-            messages = [
-                {"role": "system", "content": "You are a helpful assistant for UAV data analysis."},
-                {"role": "user", "content": user_message}
-            ]
+            # --- Context handling ---
+            context_idx = self.context_selector.currentIndex() - 1  # -1 because "No context" is at 0
+            messages = [{"role": "system", "content": "You are a helpful assistant for UAV data analysis."}]
+            if context_idx >= 0:
+                context_str = self.chat_contexts[context_idx]
+                context_md = tsv_to_markdown(context_str)
+                messages.append({"role": "system", "content": f"Context:\n{context_md}"})
+            messages.append({"role": "user", "content": user_message})
 
             try:
                 ai_response = ask_chatgpt(messages, model=selected_model)
@@ -256,6 +272,58 @@ class MainWindow(QMainWindow):
             ).format(ai_html_content)
             self.chat_display.insertHtml(ai_html)
             self.chat_display.insertPlainText("\n")
+
+    def show_table_context_menu(self, pos):
+        menu = QMenu(self)
+        add_context_action = QAction("Add context to chat", self)
+        add_context_action.triggered.connect(self.add_selection_to_chat_context)
+        menu.addAction(add_context_action)
+        menu.exec(self.raw_table.mapToGlobal(pos))
+
+    def add_selection_to_chat_context(self):
+        # Will implement extraction and communication with MainWindow in the next step
+        pass
+
+    def add_chat_context(self, context_str):
+        """Add extracted context to the list and update the dropdown."""
+        self.chat_contexts.append(context_str)
+        # Show the context selector and clear button if hidden
+        self.context_selector.setVisible(True)
+        self.clear_contexts_button.setVisible(True)
+        # Add a preview (first line or first 40 chars) as the dropdown entry
+        preview = context_str.splitlines()[0] if context_str else "Context"
+        if len(preview) > 40:
+            preview = preview[:37] + "..."
+        self.context_selector.addItem(f"Selection {len(self.chat_contexts)}: {preview}")
+        QMessageBox.information(self, "Context Added", "Selection added as chat context.")
+
+    def clear_chat_contexts(self):
+        """Clears all chat contexts and updates the UI."""
+        self.chat_contexts.clear()
+        self.context_selector.clear()
+        self.context_selector.addItem("No context")
+        if self.context_selector.count() <= 1:
+            self.context_selector.setVisible(False)
+            self.clear_contexts_button.setVisible(False)
+        QMessageBox.information(self, "Contexts Cleared", "All chat contexts have been cleared.")
+
+    def show_context_selector_menu(self, pos):
+        if self.context_selector.count() <= 1:
+            return
+        menu = QMenu(self)
+        remove_action = QAction("Remove selected context", self)
+        remove_action.triggered.connect(self.remove_selected_context)
+        menu.addAction(remove_action)
+        menu.exec(self.context_selector.mapToGlobal(pos))
+
+    def remove_selected_context(self):
+        idx = self.context_selector.currentIndex()
+        if idx > 0:
+            del self.chat_contexts[idx - 1]
+            self.context_selector.removeItem(idx)
+            if self.context_selector.count() <= 1:
+                self.context_selector.setVisible(False)
+                self.clear_contexts_button.setVisible(False)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

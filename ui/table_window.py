@@ -1,12 +1,17 @@
 import os
 import pandas as pd
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem, QLabel
+from PyQt6.QtCore import pyqtSignal, Qt
+from PyQt6.QtWidgets import QMenu
+from PyQt6.QtGui import QAction
 from src.data_processor import load_and_clean_csv
 
 class TableWindow(QWidget):
     """Displays the processed CSV log data and analysis results."""
-    def __init__(self, csv_file):
-        super().__init__()
+    context_extracted = pyqtSignal(str)  # Signal to send context as string
+
+    def __init__(self, csv_file, parent=None):
+        super().__init__(parent)
 
         self.setWindowTitle(f"Blackbox Log Data - {os.path.basename(csv_file)}")
         self.setGeometry(150, 150, 1200, 600)  # Adjusted width for two sections
@@ -17,6 +22,8 @@ class TableWindow(QWidget):
         # Left section: Raw CSV data
         left_layout = QVBoxLayout()
         self.raw_table = QTableWidget()
+        self.raw_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.raw_table.customContextMenuRequested.connect(self.show_table_context_menu)
         self.load_csv(csv_file)
         left_layout.addWidget(QLabel("Raw CSV Data"))
         left_layout.addWidget(self.raw_table)
@@ -127,3 +134,35 @@ class TableWindow(QWidget):
         for row, (metric, value) in enumerate(analysis_results):
             self.analysis_table.setItem(row, 0, QTableWidgetItem(metric))
             self.analysis_table.setItem(row, 1, QTableWidgetItem(value))
+
+    def add_selection_to_chat_context(self):
+        """Extracts selected cells and emits them as context."""
+        selected_ranges = self.raw_table.selectedRanges()
+        if not selected_ranges:
+            return
+
+        sel = selected_ranges[0]
+        rows = range(sel.topRow(), sel.bottomRow() + 1)
+        cols = range(sel.leftColumn(), sel.rightColumn() + 1)
+
+        # Extract header
+        headers = [self.raw_table.horizontalHeaderItem(col).text() for col in cols]
+        extracted = ["\t".join(headers)]
+
+        # Extract data
+        for row in rows:
+            row_data = []
+            for col in cols:
+                item = self.raw_table.item(row, col)
+                row_data.append(item.text() if item else "")
+            extracted.append("\t".join(row_data))
+
+        context_str = "\n".join(extracted)
+        self.context_extracted.emit(context_str)
+
+    def show_table_context_menu(self, pos):
+        menu = QMenu(self)
+        add_context_action = QAction("Add context to chat", self)
+        add_context_action.triggered.connect(self.add_selection_to_chat_context)
+        menu.addAction(add_context_action)
+        menu.exec(self.raw_table.mapToGlobal(pos))
