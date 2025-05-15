@@ -16,6 +16,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from ui.table_window import TableWindow
 from ui.file_selection import FileSelectionWindow
 from ui.column_selection import ColumnSelectionWindow
+from ai.chat_worker import ChatWorker  # Import the ChatWorker class
 from src.context_processor import tsv_to_markdown  # Import the context processor
 import plotly.express as px
 from src.converter import convert_bbl_to_csv  # Import the converter logic
@@ -29,22 +30,6 @@ from src.data_processor import (
     plot_stick_input_vs_movement,  # Import the Stick Input vs. Actual Movement plot function
 )
 from src.assistant import ask_chatgpt
-
-class ChatWorker(QThread):
-    finished = pyqtSignal(str)
-    error = pyqtSignal(str)
-
-    def __init__(self, messages, model):
-        super().__init__()
-        self.messages = messages
-        self.model = model
-
-    def run(self):
-        try:
-            ai_response = ask_chatgpt(self.messages, model=self.model)
-            self.finished.emit(ai_response)
-        except Exception as e:
-            self.error.emit(f"AI: Error communicating with ChatGPT: {e}")
 
 class MainWindow(QMainWindow):
     """Main Window with file selection, processing, and AI assistant chat."""
@@ -289,14 +274,24 @@ class MainWindow(QMainWindow):
                 messages.append({"role": "user", "content": f"Here is some context data:\n{context_md}"})
 
             user_content = user_message
-            if self.attached_images:
+
+            # Only include images that are still in the image_list
+            current_images = []
+            current_filenames = [self.image_list.item(i).text() for i in range(self.image_list.count())]
+            for fname, img in self.attached_images:
+                if fname in current_filenames:
+                    current_images.append(img)
+
+            if current_images:
                 content_blocks = [{"type": "text", "text": user_content}]
-                content_blocks.extend([img for _, img in self.attached_images])
+                content_blocks.extend(current_images)
                 messages.append({
                     "role": "user",
                     "content": content_blocks
                 })
-                self.attached_images.clear()
+                self.attached_images = [
+                    (fname, img) for fname, img in self.attached_images if fname not in current_filenames
+                ]
                 self.update_image_list()
             else:
                 messages.append({"role": "user", "content": user_content})
@@ -361,10 +356,6 @@ class MainWindow(QMainWindow):
         add_context_action.triggered.connect(self.add_selection_to_chat_context)
         menu.addAction(add_context_action)
         menu.exec(self.raw_table.mapToGlobal(pos))
-
-    def add_selection_to_chat_context(self):
-        # Will implement extraction and communication with MainWindow in the next step
-        pass
 
     def add_chat_context(self, context_str):
         """Add extracted context to the list and update the dropdown."""
