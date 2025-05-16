@@ -2,7 +2,7 @@ import sys
 import os
 import pandas as pd
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QLabel, QVBoxLayout, QHBoxLayout, QWidget, QPushButton, QFileDialog, QMessageBox, QToolBar, QTextEdit, QLineEdit, QComboBox, QMenu, QListWidget, QListWidgetItem
+    QApplication, QMainWindow, QLabel, QVBoxLayout, QHBoxLayout, QWidget, QPushButton, QFileDialog, QMessageBox, QToolBar, QTextEdit, QLineEdit, QComboBox, QMenu, QListWidget, QListWidgetItem, QDialog, QFormLayout
 )
 from PyQt6.QtGui import QAction  # QAction ONLY from QtGui
 from PyQt6.QtWebEngineWidgets import QWebEngineView
@@ -51,6 +51,10 @@ class MainWindow(QMainWindow):
         open_folder_action = QAction("Open Decoded Folder", self)
         open_folder_action.triggered.connect(self.open_decoded_folder)
         self.toolbar.addAction(open_folder_action)
+
+        settings_action = QAction("Settings", self)
+        settings_action.triggered.connect(self.open_settings_dialog)
+        self.toolbar.addAction(settings_action)
 
         # Central widget for the chat interface
         central_widget = QWidget()
@@ -117,6 +121,19 @@ class MainWindow(QMainWindow):
         self.chat_contexts = []  # List to store context strings
         self.attached_images = []  # Store attached images for the next chat message
 
+        self.all_models = [
+            "gpt-3.5-turbo",
+            "gpt-4-1106-preview",
+            "gpt-4.1-mini-2025-04-14",
+            "gpt-4o",
+            "gpt-4.1-nano-2025-04-14",
+        ]
+        self.vision_models = [
+            "gpt-4o",
+            "gpt-4-1106-preview",  # If you have access to vision in this model
+            # Add other vision-capable models here
+        ]
+
     def closeEvent(self, event):
         """Closes all child windows when the main window is closed."""
         # Close all file selection windows
@@ -136,18 +153,17 @@ class MainWindow(QMainWindow):
 
     def open_file_dialog(self):
         """Opens a file dialog to select a .bbl log file and process it."""
+        bbl_path, decoded_path = self.load_paths()
         file_path, _ = QFileDialog.getOpenFileName(
-            self, "Select Blackbox Log File", "", "Blackbox Logs (*.bbl);;All Files (*)"
+            self, "Select Blackbox Log File", bbl_path, "Blackbox Logs (*.bbl);;All Files (*)"
         )
         if file_path:
             output_dir = QFileDialog.getExistingDirectory(
-                self, "Select Output Folder", ""
+                self, "Select Output Folder", decoded_path
             )
             if not output_dir:
                 QMessageBox.warning(self, "No Folder Selected", "Please select a folder to save the decoded files.")
                 return
-
-            self.chat_display.append(f"Processing: {file_path}")
             output_dir = os.path.join(output_dir, os.path.basename(file_path).replace(".bbl", "_output"))
             os.makedirs(output_dir, exist_ok=True)
 
@@ -341,14 +357,24 @@ class MainWindow(QMainWindow):
             self.attached_images.append((os.path.basename(file_path), image_data))
             self.update_image_list()
             QMessageBox.information(self, "Image Attached", "Image will be sent with your next message.")
-        else:
-            pass  # No file selected
+        # Always update model selector, even if no file selected (in case of removal)
+        self.update_model_selector()
+
+    def remove_selected_image(self, item):
+        """Removes the selected image from the list and updates attached_images."""
+        row = self.image_list.row(item)
+        if row >= 0:
+            del self.attached_images[row]
+            self.image_list.takeItem(row)
+            self.image_list.setVisible(bool(self.attached_images))
+            self.update_model_selector()
 
     def update_image_list(self):
         self.image_list.clear()
         for fname, _ in self.attached_images:
             self.image_list.addItem(fname)
         self.image_list.setVisible(bool(self.attached_images))
+        self.update_model_selector()  # <-- Add this line
 
     def show_table_context_menu(self, pos):
         menu = QMenu(self)
@@ -369,6 +395,7 @@ class MainWindow(QMainWindow):
             preview = preview[:37] + "..."
         self.context_selector.addItem(f"Selection {len(self.chat_contexts)}: {preview}")
         QMessageBox.information(self, "Context Added", "Selection added as chat context.")
+        self.update_model_selector()  # <-- Add this line
 
     def clear_chat_contexts(self):
         """Clears all chat contexts and updates the UI."""
@@ -379,6 +406,7 @@ class MainWindow(QMainWindow):
             self.context_selector.setVisible(False)
             self.clear_contexts_button.setVisible(False)
         QMessageBox.information(self, "Contexts Cleared", "All chat contexts have been cleared.")
+        self.update_model_selector()  # <-- Add this line
 
     def show_context_selector_menu(self, pos):
         if self.context_selector.count() <= 1:
@@ -397,11 +425,89 @@ class MainWindow(QMainWindow):
             if self.context_selector.count() <= 1:
                 self.context_selector.setVisible(False)
                 self.clear_contexts_button.setVisible(False)
+        self.update_model_selector()  # <-- Add this line
 
     def remove_selected_image(self, item):
         """Removes the selected image from the list."""
         row = self.image_list.row(item)
         self.image_list.takeItem(row)
+
+    def open_settings_dialog(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Settings")
+        layout = QFormLayout(dialog)
+
+        bbl_edit = QLineEdit()
+        decoded_edit = QLineEdit()
+
+        # Load current paths
+        bbl_path, decoded_path = self.load_paths()
+        bbl_edit.setText(bbl_path)
+        decoded_edit.setText(decoded_path)
+
+        browse_bbl = QPushButton("Browse")
+        browse_decoded = QPushButton("Browse")
+
+        def browse_bbl_folder():
+            folder = QFileDialog.getExistingDirectory(self, "Select Default .bbl Folder", bbl_edit.text())
+            if folder:
+                bbl_edit.setText(folder)
+        def browse_decoded_folder():
+            folder = QFileDialog.getExistingDirectory(self, "Select Default Decoded Folder", decoded_edit.text())
+            if folder:
+                decoded_edit.setText(folder)
+
+        browse_bbl.clicked.connect(browse_bbl_folder)
+        browse_decoded.clicked.connect(browse_decoded_folder)
+
+        layout.addRow("Default .bbl folder:", bbl_edit)
+        layout.addRow("", browse_bbl)
+        layout.addRow("Default decoded folder:", decoded_edit)
+        layout.addRow("", browse_decoded)
+
+        save_btn = QPushButton("Save")
+        layout.addRow(save_btn)
+        def save_and_close():
+            self.save_paths(bbl_edit.text(), decoded_edit.text())
+            dialog.accept()
+        save_btn.clicked.connect(save_and_close)
+
+        dialog.exec()
+
+    def save_paths(self, bbl_path, decoded_path):
+        with open("path.txt", "w", encoding="utf-8") as f:
+            f.write(f"{bbl_path}\n{decoded_path}\n")
+
+    def load_paths(self):
+        try:
+            with open("path.txt", "r", encoding="utf-8") as f:
+                lines = f.read().splitlines()
+                bbl_path = lines[0] if len(lines) > 0 else "C:\\"
+                decoded_path = lines[1] if len(lines) > 1 else "C:\\"
+                return bbl_path, decoded_path
+        except FileNotFoundError:
+            return "C:\\", "C:\\"
+
+    def update_model_selector(self):
+        # If images or context are attached, only show vision models
+        has_images = self.image_list.count() > 0
+        has_context = (
+            self.context_selector.isVisible() and
+            self.context_selector.currentIndex() > 0
+        )
+        if has_images:
+            allowed_models = self.vision_models
+        else:
+            allowed_models = self.all_models
+
+        current = self.model_selector.currentText()
+        self.model_selector.blockSignals(True)
+        self.model_selector.clear()
+        self.model_selector.addItems(allowed_models)
+        # Restore selection if possible
+        if current in allowed_models:
+            self.model_selector.setCurrentText(current)
+        self.model_selector.blockSignals(False)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
