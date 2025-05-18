@@ -34,6 +34,8 @@ def load_and_clean_csv(csv_file, load_non_numeric=False):
     if all(col in df.columns for col in motor_columns):
         df["throttle"] = df[" motor[0]"] + df[" motor[1]"] + df[" motor[2]"] + df[" motor[3]"]
 
+    df.columns = [col.strip() for col in df.columns]
+
     return df
 
 def plot_pid_loop_analysis(csv_file):
@@ -41,7 +43,7 @@ def plot_pid_loop_analysis(csv_file):
     df = load_and_clean_csv(csv_file)
 
     # Ensure required columns exist
-    y_columns = [" gyroADC[0]", " setpoint[0]", " axisP[0]", " axisI[0]", " axisD[0]", " axisF[0]"]
+    y_columns = ["gyroADC[0]", "setpoint[0]", "axisP[0]", "axisI[0]", "axisD[0]", "axisF[0]"]
     valid_columns = [col for col in y_columns if col in df.columns]
 
     if not valid_columns:
@@ -69,7 +71,7 @@ def plot_throttle_voltage(csv_file):
     df = load_and_clean_csv(csv_file)
 
     # Ensure required columns exist
-    y_columns = [" motor[0]", " motor[1]", " motor[2]", " motor[3]", " vbatLatest (V)"]
+    y_columns = ["motor[0]", "motor[1]", "motor[2]", "motor[3]", "vbatLatest (V)"]
     valid_columns = [col for col in y_columns if col in df.columns]
 
     if not valid_columns:
@@ -97,7 +99,7 @@ def plot_motor_desync(csv_file):
     df = load_and_clean_csv(csv_file)
 
     # Dynamically find motor columns
-    motor_columns = [col for col in df.columns if col.startswith(" motor")]
+    motor_columns = [col for col in df.columns if col.startswith("motor")]
 
     if not motor_columns:
         print("Error: No valid motor columns for Motor Desync or Oscillations.")
@@ -124,8 +126,8 @@ def plot_stick_input_vs_movement(csv_file):
     df = load_and_clean_csv(csv_file)
 
     # Ensure required columns exist
-    y_columns = [" rcCommand[0]", " rcCommand[1]", " rcCommand[2]",
-                 " gyroADC[0]", " gyroADC[1]", " gyroADC[2]"]
+    y_columns = ["rcCommand[0]", "rcCommand[1]", "rcCommand[2]",
+                 "gyroADC[0]", "gyroADC[1]", "gyroADC[2]"]
     valid_columns = [col for col in y_columns if col in df.columns]
 
     if not valid_columns:

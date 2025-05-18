@@ -30,6 +30,7 @@ from src.data_processor import (
     plot_stick_input_vs_movement,  # Import the Stick Input vs. Actual Movement plot function
 )
 from src.assistant import ask_chatgpt
+from ui.column_selection import FRIENDLY_COLUMN_NAMES
 
 class DecodeWorker(QThread):
     finished = pyqtSignal(str)  # emits output_dir on success
@@ -262,18 +263,33 @@ class MainWindow(QMainWindow):
             return
 
         # Create a Bokeh figure
-        p = figure(title=f"Graph for {os.path.basename(csv_file)}",
-                   x_axis_label="Time (ms)", y_axis_label="Values",
-                   tooltips=[("Time (ms)", "$x"), ("Value", "$y")],
-                   width=900, height=600)
+        p = figure(
+            title=f"Graph for {os.path.basename(csv_file)}",
+            x_axis_label="Time (ms)",
+            y_axis_label="Values",
+            tooltips=[
+                ("Time (ms)", "$x"),
+                ("Value", "$y"),
+                ("Column", "@legend_label")  # This works if you use ColumnDataSource with a 'legend_label' field
+            ],
+            width=900, height=600
+        )
 
         # Generate random colors for each column
         colors = ["#" + ''.join(random.choices("0123456789ABCDEF", k=6)) for _ in columns]
 
+        # Friendly names mapping
+        friendly_names = {col: FRIENDLY_COLUMN_NAMES.get(col, col) for col in columns}
+
         # Add lines for each selected column with a unique color
         for i, column in enumerate(columns):
-            if column in df.columns:  # Ensure the column exists after cleaning
-                p.line(df["time_ms"], df[column], legend_label=column, line_width=2, color=colors[i])
+            if column in df.columns:
+                p.line(
+                    df["time_ms"], df[column],
+                    legend_label=friendly_names[column],  # Use friendly name
+                    line_width=2,
+                    color=colors[i]
+                )
 
         # Customize the legend
         p.legend.title = "Columns"

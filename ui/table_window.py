@@ -27,6 +27,7 @@ class TableWindow(QWidget):
         self.raw_table = QTableView()
         self.raw_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.raw_table.customContextMenuRequested.connect(self.show_table_context_menu)
+        self.raw_table.horizontalHeader().setMouseTracking(True)  # <-- Add this line
         self.load_table_in_thread(csv_file)
         left_layout.addWidget(QLabel("Raw CSV Data"))
         left_layout.addWidget(self.raw_table)
@@ -41,8 +42,8 @@ class TableWindow(QWidget):
         right_layout.addWidget(self.analysis_table)
 
         # Add left and right sections to the main layout
-        main_layout.addLayout(left_layout)
-        main_layout.addLayout(right_layout)
+        main_layout.addLayout(left_layout, 4)   # 4 parts (80%)
+        main_layout.addLayout(right_layout, 1)  # 1 part (20%)
 
         self.setLayout(main_layout)
 
@@ -126,51 +127,51 @@ class TableWindow(QWidget):
         analysis_results = []
 
         # 1. Tracking Error (Setpoint vs Gyro)
-        if " setpoint[0]" in df.columns and " gyroADC[0]" in df.columns:
-            mae_roll = (df[" setpoint[0]"] - df[" gyroADC[0]"]).abs().mean()
-            rmse_roll = ((df[" setpoint[0]"] - df[" gyroADC[0]"])**2).mean()**0.5
+        if "setpoint[0]" in df.columns and "gyroADC[0]" in df.columns:
+            mae_roll = (df["setpoint[0]"] - df["gyroADC[0]"]).abs().mean()
+            rmse_roll = ((df["setpoint[0]"] - df["gyroADC[0]"])**2).mean()**0.5
             analysis_results.append(["MAE (Roll)", f"{mae_roll:.2f}"])
             analysis_results.append(["RMSE (Roll)", f"{rmse_roll:.2f}"])
 
         # 2. PID Balance Metrics
-        if all(col in df.columns for col in [" axisP[0]", " axisI[0]", " axisD[0]"]):
-            total_pid = df[" axisP[0]"].abs().sum()+df[" axisI[0]"].abs().sum()+df[" axisD[0]"].abs().sum()
-            p_contrib = df[" axisP[0]"].abs().sum() / total_pid * 100
-            i_contrib = df[" axisI[0]"].abs().sum() / total_pid * 100
-            d_contrib = df[" axisD[0]"].abs().sum() / total_pid * 100
+        if all(col in df.columns for col in ["axisP[0]", "axisI[0]", "axisD[0]"]):
+            total_pid = df["axisP[0]"].abs().sum()+df["axisI[0]"].abs().sum()+df["axisD[0]"].abs().sum()
+            p_contrib = df["axisP[0]"].abs().sum() / total_pid * 100
+            i_contrib = df["axisI[0]"].abs().sum() / total_pid * 100
+            d_contrib = df["axisD[0]"].abs().sum() / total_pid * 100
             analysis_results.append(["P Contribution (%)", f"{p_contrib:.2f}%"])
             analysis_results.append(["I Contribution (%)", f"{i_contrib:.2f}%"])
             analysis_results.append(["D Contribution (%)", f"{d_contrib:.2f}%"])
 
         # 3. Overshoot and Bounceback
-        if " gyroADC[0]" in df.columns and " setpoint[0]" in df.columns:
-            overshoot = (df[" gyroADC[0]"] - df[" setpoint[0]"]).max()
+        if "gyroADC[0]" in df.columns and "setpoint[0]" in df.columns:
+            overshoot = (df["gyroADC[0]"] - df["setpoint[0]"]).max()
             analysis_results.append(["Max Overshoot (Roll)", f"{overshoot:.2f}"])
 
         # 4. Noise & Jitter (Filtering)
-        if " gyroADC[0]" in df.columns:
-            noise_roll = df[" gyroADC[0]"].diff().std()
+        if "gyroADC[0]" in df.columns:
+            noise_roll = df["gyroADC[0]"].diff().std()
             analysis_results.append(["Gyro Noise Std (Roll)", f"{noise_roll:.2f}"])
 
         # 5. Battery Voltage Sag
-        if " vbatLatest (V)" in df.columns:
-            min_voltage = df[" vbatLatest (V)"].min()
-            voltage_drop = df[" vbatLatest (V)"].max() - min_voltage
+        if "vbatLatest (V)" in df.columns:
+            min_voltage = df["vbatLatest (V)"].min()
+            voltage_drop = df["vbatLatest (V)"].max() - min_voltage
             analysis_results.append(["Min Voltage", f"{min_voltage:.2f}V"])
             analysis_results.append(["Voltage Drop", f"{voltage_drop:.2f}V"])
 
-        if "throttle" in df.columns and " vbatLatest (V)" in df.columns:
-            correlation = df["throttle"].corr(df[" vbatLatest (V)"])
+        if "throttle" in df.columns and "vbatLatest (V)" in df.columns:
+            correlation = df["throttle"].corr(df["vbatLatest (V)"])
             analysis_results.append(["Throttle-Voltage Correlation", f"{correlation:.2f}"])
 
         # 6. Command Latency
-        if " setpoint[0]" in df.columns and "gyroADC[0]" in df.columns:
+        if "setpoint[0]" in df.columns and "gyroADC[0]" in df.columns:
             df["roll_error"] = df["setpoint[0]"] - df["gyroADC[0]"]
             # Placeholder for cross-correlation lag calculation
             analysis_results.append(["Command Latency (Lag)", "Not Implemented"])
 
         # 7. Motor Output Symmetry
-        motor_columns = [col for col in df.columns if col.startswith(" motor[")]
+        motor_columns = [col for col in df.columns if col.startswith("motor[")]
         if motor_columns:
             motor_imbalance = df[motor_columns].std(axis=1).mean()
             analysis_results.append(["Motor Imbalance (Std)", f"{motor_imbalance:.2f}"])
@@ -184,8 +185,8 @@ class TableWindow(QWidget):
             avg_throttle = df["throttle"].mean()
             analysis_results.append(["Avg Throttle", f"{avg_throttle:.2f}"])
 
-        if " amperageLatest (A)" in df.columns:
-            max_current = df[" amperageLatest (A)"].max()
+        if "amperageLatest (A)" in df.columns:
+            max_current = df["amperageLatest (A)"].max()
             analysis_results.append(["Max Current", f"{max_current:.2f}A"])
 
         # Populate the analysis table
