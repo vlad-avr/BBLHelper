@@ -45,29 +45,30 @@ class TableWindow(QWidget):
 
         self.setLayout(main_layout)
 
-    def load_csv(self, csv_file):
-        """Loads processed CSV data into the table widget."""
-        # Use the load_and_clean_csv function to process the DataFrame
-        df = load_and_clean_csv(csv_file, load_non_numeric=True)
+    # def load_csv(self, csv_file):
+    #     """Loads processed CSV data into the table widget."""
+    #     # Use the load_and_clean_csv function to process the DataFrame
+    #     df = load_and_clean_csv(csv_file, load_non_numeric=True)
 
-        # Set up the table with the processed DataFrame
-        self.raw_table.setRowCount(len(df))
-        self.raw_table.setColumnCount(len(df.columns))
-        self.raw_table.setHorizontalHeaderLabels(df.columns)
+    #     # Set up the table with the processed DataFrame
+    #     self.raw_table.setRowCount(len(df))
+    #     self.raw_table.setColumnCount(len(df.columns))
+    #     self.raw_table.setHorizontalHeaderLabels(df.columns)
 
-        rssi_max = None
-        if " rssi" in df.columns:
-            try:
-                rssi_max = df[" rssi"].max()
-            except Exception:
-                rssi_max = None
+    #     rssi_max = None
+    #     print("Columns in DataFrame:", df.columns)
+    #     if " rssi" in df.columns:
+    #         try:
+    #             rssi_max = df[" rssi"].max()
+    #         except Exception:
+    #             rssi_max = None
 
-        for row in range(len(df)):
-            for col in range(len(df.columns)):
-                col_name = df.columns[col].strip()
-                item = QTableWidgetItem(str(df.iloc[row, col]))
-                paint_table_item(item, col_name, df.iloc[row, col], rssi_max=rssi_max)
-                self.raw_table.setItem(row, col, item)
+    #     for row in range(len(df)):
+    #         for col in range(len(df.columns)):
+    #             col_name = df.columns[col].strip()
+    #             item = QTableWidgetItem(str(df.iloc[row, col]))
+    #             paint_table_item(item, col_name, df.iloc[row, col], rssi_max=rssi_max)
+    #             self.raw_table.setItem(row, col, item)
 
     def load_table_in_thread(self, csv_file):
         from workers.table_loader_worker import TableLoadWorker
@@ -94,10 +95,16 @@ class TableWindow(QWidget):
             tooltip = FRIENDLY_COLUMN_NAMES.get(col_name)
             if tooltip:
                 self.raw_table.horizontalHeaderItem(col).setToolTip(tooltip)
+        rssi_max = None
+        if " rssi" in df.columns:
+            try:
+                rssi_max = df[" rssi"].max()
+            except Exception:
+                rssi_max = None
         for row in range(len(df)):
             for col in range(len(df.columns)):
                 item = QTableWidgetItem(str(df.iloc[row, col]))
-                paint_table_item(item, df.columns[col].strip(), df.iloc[row, col])
+                paint_table_item(item, df.columns[col].strip(), df.iloc[row, col], rssi_max=rssi_max, row=row, df=df)
                 self.raw_table.setItem(row, col, item)
 
     def on_table_load_error(self, msg):
