@@ -351,3 +351,5 @@ def paint_table_item(item, col_name, value, rssi_max=None, row=None, df=None):
                     item.setBackground(QColor(255, 120, 120))  # red
         except Exception:
             item.setBackground(QColor(255, 255, 120))  # fallback yellow
+    else:
+        item.setBackground(QColor(255, 255, 255))  # white

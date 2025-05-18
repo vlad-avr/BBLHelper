@@ -1,12 +1,13 @@
 import os
 import pandas as pd
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem, QLabel
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QTableView, QTableWidgetItem, QLabel, QProgressDialog, QTableWidget
 from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtWidgets import QMenu
 from PyQt6.QtGui import QAction
 from src.data_processor import load_and_clean_csv
 from ui.column_selection import FRIENDLY_COLUMN_NAMES  # Add this import at the top
 from src.table_painter import paint_table_item
+from src.pandas_table_model import PandasTableModel
 
 class TableWindow(QWidget):
     """Displays the processed CSV log data and analysis results."""
@@ -23,7 +24,7 @@ class TableWindow(QWidget):
 
         # Left section: Raw CSV data
         left_layout = QVBoxLayout()
-        self.raw_table = QTableWidget()
+        self.raw_table = QTableView()
         self.raw_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.raw_table.customContextMenuRequested.connect(self.show_table_context_menu)
         self.load_table_in_thread(csv_file)
@@ -75,37 +76,41 @@ class TableWindow(QWidget):
         self.table_worker = TableLoadWorker(csv_file)
         self.table_worker.finished.connect(self.on_table_loaded)
         self.table_worker.error.connect(self.on_table_load_error)
-        self.raw_table.setRowCount(0)
-        self.raw_table.setColumnCount(0)
-        self.raw_table.clear()
-        self.raw_table.setHorizontalHeaderLabels([])
-        # Optionally show a loading message
-        self.raw_table.setRowCount(1)
-        self.raw_table.setColumnCount(1)
-        self.raw_table.setItem(0, 0, QTableWidgetItem("Loading table, please wait..."))
+        # self.raw_table.setRowCount(0)
+        # self.raw_table.setColumnCount(0)
+        # self.raw_table.clear()
+        # self.raw_table.setHorizontalHeaderLabels([])
+        # self.raw_table.setRowCount(1)
+        # self.raw_table.setColumnCount(1)
+        # self.raw_table.setItem(0, 0, QTableWidgetItem("Loading table, please wait..."))
+        self.progress_dialog = QProgressDialog("Loading table...", None, 0, 0, self)
+        self.progress_dialog.setWindowTitle("Please wait")
+        self.progress_dialog.setWindowModality(Qt.WindowModality.ApplicationModal)
+        self.progress_dialog.show()
         self.table_worker.start()
 
     def on_table_loaded(self, df):
-        self.raw_table.clear()
-        self.raw_table.setRowCount(len(df))
-        self.raw_table.setColumnCount(len(df.columns))
-        self.raw_table.setHorizontalHeaderLabels(df.columns)
-        for col in range(len(df.columns)):
-            col_name = df.columns[col]
-            tooltip = FRIENDLY_COLUMN_NAMES.get(col_name)
-            if tooltip:
-                self.raw_table.horizontalHeaderItem(col).setToolTip(tooltip)
-        rssi_max = None
-        if " rssi" in df.columns:
-            try:
-                rssi_max = df[" rssi"].max()
-            except Exception:
-                rssi_max = None
-        for row in range(len(df)):
-            for col in range(len(df.columns)):
-                item = QTableWidgetItem(str(df.iloc[row, col]))
-                paint_table_item(item, df.columns[col].strip(), df.iloc[row, col], rssi_max=rssi_max, row=row, df=df)
-                self.raw_table.setItem(row, col, item)
+        df.columns = [col.strip() for col in df.columns]
+        rssi_max = df["rssi"].max() if "rssi" in df.columns else None
+        self.model = PandasTableModel(df, rssi_max=rssi_max)
+        self.raw_table.setModel(self.model)
+        # for col in range(len(df.columns)):
+        #     col_name = df.columns[col]
+        #     tooltip = FRIENDLY_COLUMN_NAMES.get(col_name)
+        #     if tooltip:
+        #         self.raw_table.horizontalHeaderItem(col).setToolTip(tooltip)
+        # rssi_max = None
+        # if " rssi" in df.columns:
+        #     try:
+        #         rssi_max = df[" rssi"].max()
+        #     except Exception:
+        #         rssi_max = None
+        # for row in range(len(df)):
+        #     for col in range(len(df.columns)):
+        #         item = QTableWidgetItem(str(df.iloc[row, col]))
+        #         paint_table_item(item, df.columns[col].strip(), df.iloc[row, col], rssi_max=rssi_max, row=row, df=df)
+                # self.raw_table.setItem(row, col, item)
+        self.progress_dialog.close()
 
     def on_table_load_error(self, msg):
         self.raw_table.clear()
@@ -194,26 +199,19 @@ class TableWindow(QWidget):
 
     def add_selection_to_chat_context(self):
         """Extracts selected cells and emits them as context."""
-        selected_ranges = self.raw_table.selectedRanges()
-        if not selected_ranges:
+        selected = self.raw_table.selectionModel().selectedIndexes()
+        if not selected:
             return
-
-        sel = selected_ranges[0]
-        rows = range(sel.topRow(), sel.bottomRow() + 1)
-        cols = range(sel.leftColumn(), sel.rightColumn() + 1)
-
-        # Extract header
-        headers = [self.raw_table.horizontalHeaderItem(col).text() for col in cols]
+        rows = sorted(set(idx.row() for idx in selected))
+        cols = sorted(set(idx.column() for idx in selected))
+        headers = [self.model.headerData(col, Qt.Orientation.Horizontal, Qt.ItemDataRole.DisplayRole) for col in cols]
         extracted = ["\t".join(headers)]
-
-        # Extract data
         for row in rows:
             row_data = []
             for col in cols:
-                item = self.raw_table.item(row, col)
-                row_data.append(item.text() if item else "")
+                idx = self.model.index(row, col)
+                row_data.append(str(self.model.data(idx, Qt.ItemDataRole.DisplayRole)))
             extracted.append("\t".join(row_data))
-
         context_str = "\n".join(extracted)
         self.context_extracted.emit(context_str)
 
