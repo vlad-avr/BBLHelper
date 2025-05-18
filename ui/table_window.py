@@ -5,6 +5,8 @@ from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtWidgets import QMenu
 from PyQt6.QtGui import QAction
 from src.data_processor import load_and_clean_csv
+from ui.column_selection import FRIENDLY_COLUMN_NAMES  # Add this import at the top
+from src.table_painter import paint_table_item
 
 class TableWindow(QWidget):
     """Displays the processed CSV log data and analysis results."""
@@ -53,9 +55,18 @@ class TableWindow(QWidget):
         self.raw_table.setColumnCount(len(df.columns))
         self.raw_table.setHorizontalHeaderLabels(df.columns)
 
+        rssi_max = None
+        if " rssi" in df.columns:
+            try:
+                rssi_max = df[" rssi"].max()
+            except Exception:
+                rssi_max = None
+
         for row in range(len(df)):
             for col in range(len(df.columns)):
+                col_name = df.columns[col].strip()
                 item = QTableWidgetItem(str(df.iloc[row, col]))
+                paint_table_item(item, col_name, df.iloc[row, col], rssi_max=rssi_max)
                 self.raw_table.setItem(row, col, item)
 
     def load_table_in_thread(self, csv_file):
@@ -78,9 +89,15 @@ class TableWindow(QWidget):
         self.raw_table.setRowCount(len(df))
         self.raw_table.setColumnCount(len(df.columns))
         self.raw_table.setHorizontalHeaderLabels(df.columns)
+        for col in range(len(df.columns)):
+            col_name = df.columns[col]
+            tooltip = FRIENDLY_COLUMN_NAMES.get(col_name)
+            if tooltip:
+                self.raw_table.horizontalHeaderItem(col).setToolTip(tooltip)
         for row in range(len(df)):
             for col in range(len(df.columns)):
                 item = QTableWidgetItem(str(df.iloc[row, col]))
+                paint_table_item(item, df.columns[col].strip(), df.iloc[row, col])
                 self.raw_table.setItem(row, col, item)
 
     def on_table_load_error(self, msg):
