@@ -16,7 +16,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from ui.table_window import TableWindow
 from ui.file_selection import FileSelectionWindow
 from ui.column_selection import ColumnSelectionWindow
-from ai.chat_worker import ChatWorker  # Import the ChatWorker class
+from workers.chat_worker import ChatWorker  # Import the ChatWorker class
 from src.context_processor import tsv_to_markdown  # Import the context processor
 import plotly.express as px
 from src.converter import convert_bbl_to_csv  # Import the converter logic
@@ -30,6 +30,26 @@ from src.data_processor import (
     plot_stick_input_vs_movement,  # Import the Stick Input vs. Actual Movement plot function
 )
 from src.assistant import ask_chatgpt
+
+class DecodeWorker(QThread):
+    finished = pyqtSignal(str)  # emits output_dir on success
+    error = pyqtSignal(str)     # emits error message
+
+    def __init__(self, file_path, output_dir):
+        super().__init__()
+        self.file_path = file_path
+        self.output_dir = output_dir
+
+    def run(self):
+        try:
+            from src.converter import convert_bbl_to_csv
+            generated_dir = convert_bbl_to_csv(self.file_path, self.output_dir)
+            if generated_dir:
+                self.finished.emit(generated_dir)
+            else:
+                self.error.emit("Failed to convert the .bbl file. Please check the file and try again.")
+        except Exception as e:
+            self.error.emit(str(e))
 
 class MainWindow(QMainWindow):
     """Main Window with file selection, processing, and AI assistant chat."""
@@ -152,7 +172,7 @@ class MainWindow(QMainWindow):
         event.accept()
 
     def open_file_dialog(self):
-        """Opens a file dialog to select a .bbl log file and process it."""
+        """Opens a file dialog to select a .bbl log file and process it in a thread."""
         bbl_path, decoded_path = self.load_paths()
         file_path, _ = QFileDialog.getOpenFileName(
             self, "Select Blackbox Log File", bbl_path, "Blackbox Logs (*.bbl);;All Files (*)"
@@ -167,16 +187,28 @@ class MainWindow(QMainWindow):
             output_dir = os.path.join(output_dir, os.path.basename(file_path).replace(".bbl", "_output"))
             os.makedirs(output_dir, exist_ok=True)
 
-            generated_dir = convert_bbl_to_csv(file_path, output_dir)
-            if generated_dir:
-                self.show_file_selection(generated_dir)
-            else:
-                QMessageBox.critical(self, "Error", "Failed to convert the .bbl file. Please check the file and try again.")
+            # Show FileSelectionWindow with "decoding" message
+            file_selection_window = FileSelectionWindow(output_dir, self)
+            file_selection_window.setWindowTitle("Decoding in Progress")
+            file_selection_window.list_widget.clear()
+            file_selection_window.list_widget.addItem(f"{os.path.basename(file_path)} is being decoded. This may take some time...")
+            file_selection_window.show()
+            self.open_file_selection_windows.append(file_selection_window)
+            file_selection_window.destroyed.connect(
+                lambda: self.open_file_selection_windows.remove(file_selection_window)
+            )
+
+            # Start decoding in a thread
+            self.decode_worker = DecodeWorker(file_path, output_dir)
+            self.decode_worker.finished.connect(lambda gen_dir: self.on_decode_finished(gen_dir, file_selection_window))
+            self.decode_worker.error.connect(lambda msg: self.on_decode_error(msg, file_selection_window))
+            self.decode_worker.start()
 
     def open_decoded_folder(self):
         """Opens a file dialog to select an already decoded folder."""
+        _, decoded_path = self.load_paths()
         folder_path = QFileDialog.getExistingDirectory(
-            self, "Select Decoded Folder", ""
+            self, "Select Decoded Folder", decoded_path
         )
         if folder_path:
             self.show_file_selection(folder_path)
@@ -509,8 +541,13 @@ class MainWindow(QMainWindow):
             self.model_selector.setCurrentText(current)
         self.model_selector.blockSignals(False)
 
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    window = MainWindow()
-    window.show()
-    sys.exit(app.exec())
+    def on_decode_finished(self, generated_dir, file_selection_window):
+        # Update the file selection window with real CSV files
+        file_selection_window.setWindowTitle("Select a CSV File")
+        file_selection_window.list_widget.clear()
+        file_selection_window.load_csv_files()
+        QMessageBox.information(self, "Decoding Complete", "Decoding finished successfully.")
+
+    def on_decode_error(self, msg, file_selection_window):
+        QMessageBox.critical(self, "Error", msg)
+        file_selection_window.close()

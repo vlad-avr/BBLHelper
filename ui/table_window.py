@@ -24,7 +24,7 @@ class TableWindow(QWidget):
         self.raw_table = QTableWidget()
         self.raw_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.raw_table.customContextMenuRequested.connect(self.show_table_context_menu)
-        self.load_csv(csv_file)
+        self.load_table_in_thread(csv_file)
         left_layout.addWidget(QLabel("Raw CSV Data"))
         left_layout.addWidget(self.raw_table)
 
@@ -57,6 +57,37 @@ class TableWindow(QWidget):
             for col in range(len(df.columns)):
                 item = QTableWidgetItem(str(df.iloc[row, col]))
                 self.raw_table.setItem(row, col, item)
+
+    def load_table_in_thread(self, csv_file):
+        from workers.table_loader_worker import TableLoadWorker
+        self.table_worker = TableLoadWorker(csv_file)
+        self.table_worker.finished.connect(self.on_table_loaded)
+        self.table_worker.error.connect(self.on_table_load_error)
+        self.raw_table.setRowCount(0)
+        self.raw_table.setColumnCount(0)
+        self.raw_table.clear()
+        self.raw_table.setHorizontalHeaderLabels([])
+        # Optionally show a loading message
+        self.raw_table.setRowCount(1)
+        self.raw_table.setColumnCount(1)
+        self.raw_table.setItem(0, 0, QTableWidgetItem("Loading table, please wait..."))
+        self.table_worker.start()
+
+    def on_table_loaded(self, df):
+        self.raw_table.clear()
+        self.raw_table.setRowCount(len(df))
+        self.raw_table.setColumnCount(len(df.columns))
+        self.raw_table.setHorizontalHeaderLabels(df.columns)
+        for row in range(len(df)):
+            for col in range(len(df.columns)):
+                item = QTableWidgetItem(str(df.iloc[row, col]))
+                self.raw_table.setItem(row, col, item)
+
+    def on_table_load_error(self, msg):
+        self.raw_table.clear()
+        self.raw_table.setRowCount(1)
+        self.raw_table.setColumnCount(1)
+        self.raw_table.setItem(0, 0, QTableWidgetItem(f"Error loading table: {msg}"))
 
     def perform_analysis(self, csv_file):
         """Performs data analysis and displays the results in the analysis table."""
