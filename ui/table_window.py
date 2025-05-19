@@ -28,6 +28,11 @@ class TableWindow(QWidget):
         self.raw_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.raw_table.customContextMenuRequested.connect(self.show_table_context_menu)
         self.raw_table.horizontalHeader().setMouseTracking(True)  # <-- Add this line
+        self.raw_table.verticalHeader().setDefaultSectionSize(12)
+        self.raw_table.horizontalHeader().setDefaultSectionSize(40)
+        font = self.raw_table.font()
+        font.setPointSize(7)
+        self.raw_table.setFont(font)
         self.load_table_in_thread(csv_file)
         left_layout.addWidget(QLabel("Raw CSV Data"))
         left_layout.addWidget(self.raw_table)

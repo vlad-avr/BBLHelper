@@ -22,14 +22,14 @@ class PandasTableModel(QAbstractTableModel):
         col_name = self._df.columns[index.column()].strip()
         if role == Qt.ItemDataRole.DisplayRole:
             return str(value)
-        if role == Qt.ItemDataRole.ToolTipRole:
-            return FRIENDLY_COLUMN_NAMES.get(col_name)
-        if role == Qt.ItemDataRole.BackgroundRole:
-            # Use paint_table_item logic to get color
+        if role == Qt.ItemDataRole.BackgroundRole or role == Qt.ItemDataRole.ToolTipRole:
             from PyQt6.QtWidgets import QTableWidgetItem
             item = QTableWidgetItem(str(value))
             paint_table_item(item, col_name, value, rssi_max=self.rssi_max, row=index.row(), df=self._df)
-            return item.background().color()
+            if role == Qt.ItemDataRole.BackgroundRole:
+                return item.background().color()
+            if role == Qt.ItemDataRole.ToolTipRole:
+                return item.toolTip() or ""
         return None
 
     def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):

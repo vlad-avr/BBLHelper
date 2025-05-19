@@ -2,27 +2,6 @@ import os
 import subprocess
 import shutil
 
-# Keywords of headers to keep
-# keywords = [
-#     "PID",
-#     "rateProfileValues",
-#     "gyro",
-#     "accel",
-#     "dterm",
-#     "looptime",
-#     "blackbox_rate",
-#     "firmware",
-#     "Product",
-#     "feature",
-#     "rcSmoothing",
-#     "setpoint",
-#     "anti_gravity",
-#     "dynamic_filter",
-#     "DynLPF",
-#     "gyro_lowpass",
-#     "dterm_lowpass",
-#     "yaw_lowpass"
-#     ]
 def convert_bbl_to_csv(bbl_file: str, output_dir: str) -> str | None:
     """
     Converts a .bbl file to multiple output files (.csv and .event) using blackbox_decode.exe.

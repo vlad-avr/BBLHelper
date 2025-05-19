@@ -3,11 +3,14 @@ from PyQt6.QtGui import QColor
 def paint_table_item(item, col_name, value, rssi_max=None, row=None, df=None):
     """
     Paints a QTableWidgetItem based on column name and value.
-    - rxSignalReceived, rxFlightChannelsValid: green if 1, red if 0
-    - failsafePhase (flags), stateFlags (flags), flightModeFlags (flags): different color per unique value
-    - rssi: >60% of max is blue gradient, <=60% is red gradient
-    - PID columns: colored by heuristics, green if normal
+    Adds a tooltip if the cell is painted yellow or red, explaining the reason.
     """
+    # Helper to set color and tooltip
+    def set_color_and_tooltip(color, tooltip=None):
+        item.setBackground(color)
+        if tooltip:
+            item.setToolTip(tooltip)
+
     # 1. Binary columns
     if col_name in ("rxSignalReceived", "rxFlightChannelsValid"):
         try:
@@ -15,7 +18,7 @@ def paint_table_item(item, col_name, value, rssi_max=None, row=None, df=None):
             if v == 1:
                 item.setBackground(QColor(180, 255, 180))  # green
             elif v == 0:
-                item.setBackground(QColor(255, 180, 180))  # red
+                set_color_and_tooltip(QColor(255, 180, 180), "Signal not received (0 = no, 1 = yes)")
         except Exception:
             pass
 
@@ -40,24 +43,22 @@ def paint_table_item(item, col_name, value, rssi_max=None, row=None, df=None):
                     r = int(255 * (1 - blue_ratio))
                     g = int(255 * (1 - blue_ratio))
                     b = 255
+                    item.setBackground(QColor(r, g, b))
                 else:
                     red_ratio = ratio / 0.6
                     r = 255
                     g = int(255 * (1 - red_ratio))
                     b = int(255 * (1 - red_ratio))
-                item.setBackground(QColor(r, g, b))
+                    set_color_and_tooltip(QColor(r, g, b), "RSSI is low (≤60% of max)")
         except Exception:
             pass
 
     # 4. PID columns
-    # axisP[0..2]
     elif col_name.startswith("axisP["):
         try:
             v = float(value)
-            # Red: spikes > 250
             if abs(v) > 250:
-                item.setBackground(QColor(255, 120, 120))
-            # Yellow: high but opposite sign to setpoint (if df and row provided)
+                set_color_and_tooltip(QColor(255, 120, 120), "P-term spike (>250)")
             elif df is not None and row is not None:
                 axis_idx = int(col_name[6])
                 setpoint_col = f"setpoint[{axis_idx}]"
@@ -67,166 +68,147 @@ def paint_table_item(item, col_name, value, rssi_max=None, row=None, df=None):
                     gyro = df.at[row, gyro_col]
                     expected = setpoint - gyro
                     if (expected != 0) and (v * expected < 0) and abs(v) > 100:
-                        item.setBackground(QColor(255, 255, 120))
+                        set_color_and_tooltip(QColor(255, 255, 120), "P-term high but opposite sign to setpoint")
                     else:
-                        item.setBackground(QColor(180, 255, 180))  # green (normal)
+                        item.setBackground(QColor(180, 255, 180))  # green
                 else:
-                    item.setBackground(QColor(180, 255, 180))  # green (normal)
+                    item.setBackground(QColor(180, 255, 180))  # green
             else:
-                item.setBackground(QColor(180, 255, 180))  # green (normal)
+                item.setBackground(QColor(180, 255, 180))  # green
         except Exception:
-            item.setBackground(QColor(180, 255, 180))  # fallback to green
+            item.setBackground(QColor(180, 255, 180))
 
-    # axisI[0..2]
     elif col_name.startswith("axisI["):
         try:
             v = float(value)
-            # Red: large I values
             if abs(v) > 200:
-                item.setBackground(QColor(255, 120, 120))
-            # Yellow: continues to accumulate after setpoint returns to zero (if df and row provided)
+                set_color_and_tooltip(QColor(255, 120, 120), "Large I-term value (>200)")
             elif df is not None and row is not None:
                 axis_idx = int(col_name[6])
                 setpoint_col = f"setpoint[{axis_idx}]"
                 if setpoint_col in df.columns:
                     setpoint = df.at[row, setpoint_col]
                     if abs(setpoint) < 1 and abs(v) > 50:
-                        item.setBackground(QColor(255, 255, 120))
+                        set_color_and_tooltip(QColor(255, 255, 120), "I-term accumulating with zero setpoint (possible wind-up)")
                     else:
-                        item.setBackground(QColor(180, 255, 180))  # green (normal)
+                        item.setBackground(QColor(180, 255, 180))
                 else:
-                    item.setBackground(QColor(180, 255, 180))  # green (normal)
+                    item.setBackground(QColor(180, 255, 180))
             else:
-                item.setBackground(QColor(180, 255, 180))  # green (normal)
+                item.setBackground(QColor(180, 255, 180))
         except Exception:
-            item.setBackground(QColor(180, 255, 180))  # fallback to green
+            item.setBackground(QColor(180, 255, 180))
 
-    # axisD[0..1]
     elif col_name.startswith("axisD[") and col_name not in ("axisD[2]",):
         try:
             v = float(value)
-            # Red: very high spikes
             if abs(v) > 200:
-                item.setBackground(QColor(255, 120, 120))
+                set_color_and_tooltip(QColor(255, 120, 120), "D-term spike (>200)")
             else:
-                item.setBackground(QColor(180, 255, 180))  # green (normal)
-            # Yellow: jittery D-term (not implemented here, needs rolling std)
-            # Red: sustained non-zero during hover (not implemented here)
+                item.setBackground(QColor(180, 255, 180))
         except Exception:
-            item.setBackground(QColor(180, 255, 180))  # fallback to green
+            item.setBackground(QColor(180, 255, 180))
 
-    # axisF[0..2]
     elif col_name.startswith("axisF["):
         try:
             v = float(value)
-            # Red: feedforward with no stick input (if df and row provided)
             if df is not None and row is not None:
                 axis_idx = int(col_name[6])
                 rc_col = f"rcCommand[{axis_idx}]"
                 if rc_col in df.columns:
                     rc = df.at[row, rc_col]
                     if abs(rc) < 1 and abs(v) > 10:
-                        item.setBackground(QColor(255, 120, 120))
+                        set_color_and_tooltip(QColor(255, 120, 120), "Feedforward with no stick input")
                     else:
-                        item.setBackground(QColor(180, 255, 180))  # green (normal)
+                        item.setBackground(QColor(180, 255, 180))
                 else:
-                    item.setBackground(QColor(180, 255, 180))  # green (normal)
+                    item.setBackground(QColor(180, 255, 180))
             else:
-                item.setBackground(QColor(180, 255, 180))  # green (normal)
+                item.setBackground(QColor(180, 255, 180))
         except Exception:
-            item.setBackground(QColor(180, 255, 180))  # fallback to green
+            item.setBackground(QColor(180, 255, 180))
 
     # motor[0-3] and eRPM[0-3]
     elif col_name.startswith("motor[") and df is not None and row is not None:
         try:
             v = float(value)
             idx = int(col_name[6])
-            # 1. Desync or Failure: motor high, eRPM low/zero
             erpm_col = f"eRPM[{idx}]"
             erpm = df.at[row, erpm_col] if erpm_col in df.columns else None
             if erpm is not None:
                 try:
                     erpm_val = float(erpm)
                     if v > 1200 and erpm_val < 100:
-                        item.setBackground(QColor(255, 120, 120))  # red
+                        set_color_and_tooltip(QColor(255, 120, 120), "Motor high, eRPM low (possible desync/failure)")
                         return
                     if erpm_val == 0 and v > 1100:
-                        item.setBackground(QColor(255, 120, 120))  # red
+                        set_color_and_tooltip(QColor(255, 120, 120), "eRPM dropped to 0 while motor command is high")
                         return
                 except Exception:
                     pass
-            # 4. Stuck min/max
             motors = [float(df.at[row, f"motor[{i}]"]) for i in range(4) if f"motor[{i}]" in df.columns]
             if len(motors) == 4:
-                if abs(v - min(motors)) < 1 and max(motors) - min(motors) > 100:
-                    item.setBackground(QColor(255, 120, 120))  # red
+                if v < 50 and max(motors) >= 1000:
+                    set_color_and_tooltip(QColor(255, 120, 120), "Motor struck min value (possible desync)")
                     return
-                if abs(v - max(motors)) < 1 and min(motors) < 1200:
-                    item.setBackground(QColor(255, 120, 120))  # red
+                if v > 2000 and min(motors) < 1000:
+                    set_color_and_tooltip(QColor(255, 120, 120), "Motor struck max value (possible desync)")
                     return
-                # 2. Asymmetry
-                if max(motors) - min(motors) > 150:
-                    item.setBackground(QColor(255, 255, 120))  # yellow
+                if max(motors) - min(motors) > 750:
+                    set_color_and_tooltip(QColor(255, 255, 120), "Persistent large difference between motors (>750)")
                     return
-            # 4. Noisy/Oscillating (simple: large diff from prev row)
             if row > 0 and f"motor[{idx}]" in df.columns:
                 prev = float(df.at[row-1, f"motor[{idx}]"])
                 if abs(v - prev) > 100:
-                    item.setBackground(QColor(255, 255, 120))  # yellow
+                    set_color_and_tooltip(QColor(255, 255, 120), "Fast oscillation in motor output")
                     return
-            # If all OK
-            item.setBackground(QColor(180, 255, 180))  # green
+            item.setBackground(QColor(180, 255, 180))
         except Exception:
-            item.setBackground(QColor(180, 255, 180))  # fallback to green
+            item.setBackground(QColor(180, 255, 180))
 
     elif col_name.startswith("eRPM[") and df is not None and row is not None:
         try:
             v = float(value)
             idx = int(col_name[5])
-            # 1. Desync or Failure: motor high, eRPM low/zero
             motor_col = f"motor[{idx}]"
             motor = df.at[row, motor_col] if motor_col in df.columns else None
             if motor is not None:
                 try:
                     motor_val = float(motor)
                     if motor_val > 1200 and v < 100:
-                        item.setBackground(QColor(255, 120, 120))  # red
+                        set_color_and_tooltip(QColor(255, 120, 120), "Motor high, eRPM low (possible desync/failure)")
                         return
                     if v == 0 and motor_val > 1100:
-                        item.setBackground(QColor(255, 120, 120))  # red
+                        set_color_and_tooltip(QColor(255, 120, 120), "eRPM dropped to 0 while motor command is high")
                         return
                 except Exception:
                     pass
-            # 4. Noisy/Oscillating (simple: large diff from prev row)
             if row > 0 and f"eRPM[{idx}]" in df.columns:
                 prev = float(df.at[row-1, f"eRPM[{idx}]"])
                 if abs(v - prev) > 200:
-                    item.setBackground(QColor(255, 255, 120))  # yellow
+                    set_color_and_tooltip(QColor(255, 255, 120), "Big fluctuation in eRPM (possible mechanical issue)")
                     return
-            # If all OK
-            item.setBackground(QColor(180, 255, 180))  # green
+            item.setBackground(QColor(180, 255, 180))
         except Exception:
-            item.setBackground(QColor(180, 255, 180))  # fallback to green
+            item.setBackground(QColor(180, 255, 180))
 
     # gyroUnfilt[0-2] - Raw Noise, Sudden Jumps
     elif col_name.startswith("gyroUnfilt[") and df is not None and row is not None:
         try:
             v = float(value)
             axis_idx = int(col_name[10])
-            # Check for rapid sign changes (noise/vibration)
             noisy = False
             for offset in [-2, -1, 1, 2]:
                 r = row + offset
                 if 0 <= r < len(df):
                     neighbor = float(df.at[r, f"gyroUnfilt[{axis_idx}]"])
-                    # Large jump and sign change
                     if abs(v - neighbor) > 80 and (v * neighbor < 0):
                         noisy = True
                         break
             if noisy:
-                item.setBackground(QColor(255, 120, 120))  # red
+                set_color_and_tooltip(QColor(255, 120, 120), "Rapid sign-changing jumps (noise/vibration)")
             else:
-                item.setBackground(QColor(180, 255, 180))  # green
+                item.setBackground(QColor(180, 255, 180))
         except Exception:
             item.setBackground(QColor(180, 255, 180))
 
@@ -235,19 +217,15 @@ def paint_table_item(item, col_name, value, rssi_max=None, row=None, df=None):
         try:
             v = float(value)
             axis_idx = int(col_name[8])
-            # 1. Compare to gyroUnfilt (smoothness)
             if f"gyroUnfilt[{axis_idx}]" in df.columns:
                 raw_val = float(df.at[row, f"gyroUnfilt[{axis_idx}]"])
                 diff = abs(v - raw_val)
-                # If filtered and unfiltered are very close, under-filtered (yellow)
-                if diff < 5:
-                    item.setBackground(QColor(255, 255, 120))
+                if diff < 5 and abs(raw_val) > 1 and abs(v) > 1:
+                    set_color_and_tooltip(QColor(255, 255, 120), "Filtered and unfiltered gyro very similar (under-filtered)")
                     return
-                # If filtered is much flatter than unfiltered, over-filtered (yellow)
                 if abs(v) < 0.5 * abs(raw_val) and abs(raw_val) > 30:
-                    item.setBackground(QColor(255, 255, 120))
+                    set_color_and_tooltip(QColor(255, 255, 120), "Filtered gyro much flatter than unfiltered (over-filtered)")
                     return
-            # 2. Oscillatory pattern: up-down-up in 3 rows
             oscillatory = False
             if row > 0 and row < len(df) - 1:
                 prev = float(df.at[row-1, f"gyroADC[{axis_idx}]"])
@@ -256,24 +234,21 @@ def paint_table_item(item, col_name, value, rssi_max=None, row=None, df=None):
                     if abs(v - prev) > 20 and abs(v - nextv) > 20:
                         oscillatory = True
             if oscillatory:
-                item.setBackground(QColor(255, 255, 120))  # yellow
+                set_color_and_tooltip(QColor(255, 255, 120), "Oscillatory pattern detected in gyroADC")
                 return
-            # 3. Sudden spike
             if row > 0:
                 prev = float(df.at[row-1, f"gyroADC[{axis_idx}]"])
                 if abs(v - prev) > 60:
-                    item.setBackground(QColor(255, 255, 120))  # yellow
+                    set_color_and_tooltip(QColor(255, 255, 120), "Sudden spike in gyroADC")
                     return
-            # 4. Compare across axes for erratic axis
             erratic = False
             if all(f"gyroADC[{i}]" in df.columns for i in range(3)):
                 vals = [float(df.at[row, f"gyroADC[{i}]"]) for i in range(3)]
                 if abs(v) > 40 and all(abs(v) > 2 * abs(val) for i, val in enumerate(vals) if i != axis_idx):
                     erratic = True
             if erratic:
-                item.setBackground(QColor(255, 255, 120))  # yellow
+                set_color_and_tooltip(QColor(255, 255, 120), "Erratic value on one gyro axis (possible mechanical issue)")
                 return
-            # 5. Correlation with PID terms (if available)
             pid_spike = False
             for pid_col in [f"axisP[{axis_idx}]", f"axisD[{axis_idx}]"]:
                 if pid_col in df.columns:
@@ -281,75 +256,68 @@ def paint_table_item(item, col_name, value, rssi_max=None, row=None, df=None):
                     if abs(v) > 40 and abs(pid_val) > 40:
                         pid_spike = True
             if pid_spike:
-                item.setBackground(QColor(255, 255, 120))  # yellow
+                set_color_and_tooltip(QColor(255, 255, 120), "Gyro spike correlates with PID spike (possible instability)")
                 return
-            # If all OK
-            item.setBackground(QColor(180, 255, 180))  # green
+            item.setBackground(QColor(180, 255, 180))
         except Exception:
-            item.setBackground(QColor(180, 255, 180))  # fallback to green
+            item.setBackground(QColor(180, 255, 180))
 
     # accSmooth[0-2]: Filtered Accelerometer Data
     elif col_name.startswith("accSmooth[") and df is not None and row is not None:
         try:
-            v = float(value)
+            v = float(value)/100.0
             axis_idx = int(col_name[10])
-            # X, Y axes: should be near 0 in hover
             if axis_idx in (0, 1):
                 if abs(v) < 2:
-                    item.setBackground(QColor(180, 255, 180))  # green
+                    item.setBackground(QColor(180, 255, 180))
                 elif abs(v) > 10:
-                    item.setBackground(QColor(255, 120, 120))  # red
+                    set_color_and_tooltip(QColor(255, 120, 120), "Accelerometer axis value is high (possible misalignment or vibration)")
                 else:
-                    item.setBackground(QColor(255, 255, 120))  # yellow
-            # Z axis: should be near -9.8 in hover
+                    set_color_and_tooltip(QColor(255, 255, 120), "Accelerometer axis value is moderately high")
             elif axis_idx == 2:
-                if abs(v + 9.8) < 2:
-                    item.setBackground(QColor(180, 255, 180))  # green
-                elif abs(v + 9.8) > 6:
-                    item.setBackground(QColor(255, 120, 120))  # red
+                if abs(v - 20.48) < 2:
+                    item.setBackground(QColor(180, 255, 180))
+                elif abs(v - 20.48) > 10:
+                    set_color_and_tooltip(QColor(255, 120, 120), "Z-axis not near freefall accelearation (possible calibration/orientation error)")
                 else:
-                    item.setBackground(QColor(255, 255, 120))  # yellow
+                    set_color_and_tooltip(QColor(255, 255, 120), "Z-axis moderately off from freefall accelearation")
         except Exception:
-            item.setBackground(QColor(255, 255, 120))  # fallback yellow
+            set_color_and_tooltip(QColor(255, 255, 120), "Accelerometer data issue")
 
     # vbatLatest (V): Voltage
     elif col_name == "vbatLatest (V)" and df is not None and row is not None:
         try:
             v = float(value)
-            # Normal: >14V (4S) or >21V (6S) at start, gradual decline
             if v > 16:
-                item.setBackground(QColor(180, 255, 180))  # green
+                item.setBackground(QColor(180, 255, 180))
             elif v < 14:
-                item.setBackground(QColor(255, 120, 120))  # red
+                set_color_and_tooltip(QColor(255, 120, 120), "Voltage very low (<14V)")
             else:
-                item.setBackground(QColor(255, 255, 120))  # yellow
-            # Sudden drop detection
+                set_color_and_tooltip(QColor(255, 255, 120), "Voltage is in warning range")
             if row > 0:
                 prev = float(df.at[row-1, "vbatLatest (V)"])
                 if abs(v - prev) > 2:
-                    item.setBackground(QColor(255, 120, 120))  # red
+                    set_color_and_tooltip(QColor(255, 120, 120), "Sudden voltage drop detected")
         except Exception:
-            item.setBackground(QColor(255, 255, 120))  # fallback yellow
+            set_color_and_tooltip(QColor(255, 255, 120), "Voltage data issue")
 
     # amperageLatest (A): Current Draw
     elif col_name == "amperageLatest (A)" and df is not None and row is not None:
         try:
             v = float(value)
-            # Normal: 0-5A idle, up to 100A+ on punch
             if v < 0:
-                item.setBackground(QColor(255, 120, 120))  # red (sensor error)
+                set_color_and_tooltip(QColor(255, 120, 120), "Negative current (sensor error)")
             elif v < 10:
-                item.setBackground(QColor(180, 255, 180))  # green
+                item.setBackground(QColor(180, 255, 180))
             elif v > 120:
-                item.setBackground(QColor(255, 120, 120))  # red (very high)
+                set_color_and_tooltip(QColor(255, 120, 120), "Very high current draw (>120A)")
             else:
-                item.setBackground(QColor(255, 255, 120))  # yellow
-            # Sudden spike detection
+                set_color_and_tooltip(QColor(255, 255, 120), "High current draw")
             if row > 0:
                 prev = float(df.at[row-1, "amperageLatest (A)"])
                 if abs(v - prev) > 40:
-                    item.setBackground(QColor(255, 120, 120))  # red
+                    set_color_and_tooltip(QColor(255, 120, 120), "Sudden spike in current draw")
         except Exception:
-            item.setBackground(QColor(255, 255, 120))  # fallback yellow
+            set_color_and_tooltip(QColor(255, 255, 120), "Current data issue")
     else:
         item.setBackground(QColor(255, 255, 255))  # white
