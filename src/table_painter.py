@@ -239,7 +239,7 @@ def paint_table_item(item, col_name, value, rssi_max=None, row=None, df=None):
             if row > 0:
                 prev = float(df.at[row-1, f"gyroADC[{axis_idx}]"])
                 if abs(v - prev) > 60:
-                    set_color_and_tooltip(QColor(255, 255, 120), "Sudden spike in gyroADC")
+                    set_color_and_tooltip(QColor(255, 120, 120), "Sudden spike in gyroADC")
                     return
             erratic = False
             if all(f"gyroADC[{i}]" in df.columns for i in range(3)):

@@ -131,16 +131,34 @@ class TableWindow(QWidget):
         # Prepare analysis results
         analysis_results = []
 
-        # 1. Tracking Error (Setpoint vs Gyro)
-        if "setpoint[0]" in df.columns and "gyroADC[0]" in df.columns:
-            mae_roll = (df["setpoint[0]"] - df["gyroADC[0]"]).abs().mean()
-            rmse_roll = ((df["setpoint[0]"] - df["gyroADC[0]"])**2).mean()**0.5
-            analysis_results.append(["MAE (Roll)", f"{mae_roll:.2f}"])
-            analysis_results.append(["RMSE (Roll)", f"{rmse_roll:.2f}"])
+        # 1. Tracking Error (Setpoint vs Gyro) for all axes
+        for axis, axis_name in zip([0, 1, 2], ["Roll", "Pitch", "Yaw"]):
+            setpoint_col = f"setpoint[{axis}]"
+            gyro_col = f"gyroADC[{axis}]"
+            if setpoint_col in df.columns and gyro_col in df.columns:
+                # MAPE
+                setpoint = df[setpoint_col]
+                gyro = df[gyro_col]
+                # Avoid division by zero
+                nonzero_mask = setpoint != 0
+                if nonzero_mask.any():
+                    mape = (abs((setpoint[nonzero_mask] - gyro[nonzero_mask]) / setpoint[nonzero_mask])).mean() * 100
+                    analysis_results.append([f"MAPE ({axis_name})", f"{mape:.2f}%"])
+                else:
+                    analysis_results.append([f"MAPE ({axis_name})", "N/A"])
+                # RMSE
+                rmse = ((setpoint - gyro) ** 2).mean() ** 0.5
+                analysis_results.append([f"RMSE ({axis_name})", f"{rmse:.2f}"])
+                # Max Overshoot
+                overshoot = (gyro - setpoint).max()
+                analysis_results.append([f"Max Overshoot ({axis_name})", f"{overshoot:.2f}"])
+                # Gyro Noise Std
+                noise_std = gyro.diff().std()
+                analysis_results.append([f"Gyro Noise Std ({axis_name})", f"{noise_std:.2f}"])
 
-        # 2. PID Balance Metrics
+        # 2. PID Balance Metrics (for roll only, as before)
         if all(col in df.columns for col in ["axisP[0]", "axisI[0]", "axisD[0]"]):
-            total_pid = df["axisP[0]"].abs().sum()+df["axisI[0]"].abs().sum()+df["axisD[0]"].abs().sum()
+            total_pid = df["axisP[0]"].abs().sum() + df["axisI[0]"].abs().sum() + df["axisD[0]"].abs().sum()
             p_contrib = df["axisP[0]"].abs().sum() / total_pid * 100
             i_contrib = df["axisI[0]"].abs().sum() / total_pid * 100
             d_contrib = df["axisD[0]"].abs().sum() / total_pid * 100
@@ -148,17 +166,7 @@ class TableWindow(QWidget):
             analysis_results.append(["I Contribution (%)", f"{i_contrib:.2f}%"])
             analysis_results.append(["D Contribution (%)", f"{d_contrib:.2f}%"])
 
-        # 3. Overshoot and Bounceback
-        if "gyroADC[0]" in df.columns and "setpoint[0]" in df.columns:
-            overshoot = (df["gyroADC[0]"] - df["setpoint[0]"]).max()
-            analysis_results.append(["Max Overshoot (Roll)", f"{overshoot:.2f}"])
-
-        # 4. Noise & Jitter (Filtering)
-        if "gyroADC[0]" in df.columns:
-            noise_roll = df["gyroADC[0]"].diff().std()
-            analysis_results.append(["Gyro Noise Std (Roll)", f"{noise_roll:.2f}"])
-
-        # 5. Battery Voltage Sag
+        # 3. Battery Voltage Sag
         if "vbatLatest (V)" in df.columns:
             min_voltage = df["vbatLatest (V)"].min()
             voltage_drop = df["vbatLatest (V)"].max() - min_voltage
@@ -169,21 +177,15 @@ class TableWindow(QWidget):
             correlation = df["throttle"].corr(df["vbatLatest (V)"])
             analysis_results.append(["Throttle-Voltage Correlation", f"{correlation:.2f}"])
 
-        # 6. Command Latency
-        if "setpoint[0]" in df.columns and "gyroADC[0]" in df.columns:
-            df["roll_error"] = df["setpoint[0]"] - df["gyroADC[0]"]
-            # Placeholder for cross-correlation lag calculation
-            analysis_results.append(["Command Latency (Lag)", "Not Implemented"])
-
-        # 7. Motor Output Symmetry
+        # 5. Motor Output Symmetry
         motor_columns = [col for col in df.columns if col.startswith("motor[")]
         if motor_columns:
             motor_imbalance = df[motor_columns].std(axis=1).mean()
             analysis_results.append(["Motor Imbalance (Std)", f"{motor_imbalance:.2f}"])
 
-        # 8. Runtime Statistics
+        # 6. Runtime Statistics
         if "time_ms" in df.columns:
-            flight_time = (df["time_ms"].iloc[-1] - df["time_ms"].iloc[0])/1000  # Convert to seconds
+            flight_time = (df["time_ms"].iloc[-1] - df["time_ms"].iloc[0]) / 1000  # Convert to seconds
             analysis_results.append(["Flight Time (s)", f"{flight_time:.2f}s"])
 
         if "throttle" in df.columns:
